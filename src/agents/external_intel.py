@@ -33,6 +33,12 @@ class ExternalIntelAgent(BaseAgent):
                 f"Knowledge base match: {h['text'][:160]}",
                 source=f"kb:{h['id']}", weight=0.3 if benign else 0.55,
                 supports=Verdict.BENIGN if benign else Verdict.SUSPICIOUS))
+        # No typology/adverse-media match is itself (weak) exculpatory signal —
+        # and, crucially, avoids fabricating a "match" the retriever didn't find.
+        if not hits:
+            ev.append(self._evidence(
+                "No adverse-media or known-typology match for this activity.",
+                source="kb:no_match", weight=0.15, supports=Verdict.BENIGN))
 
         for e in ev:
             room.post(self.name, "evidence", e.model_dump(mode="json"))

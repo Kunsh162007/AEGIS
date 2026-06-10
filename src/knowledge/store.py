@@ -50,5 +50,9 @@ class KnowledgeBase:
             ids, docs = res["ids"][0], res["documents"][0]
             return [{"id": i, "text": t} for i, t in zip(ids, docs)]
         q = _tokens(query)
-        scored = sorted(self.docs, key=lambda d: len(q & _tokens(d["text"])), reverse=True)
-        return [d for d in scored[:k] if len(q & _tokens(d["text"])) > 0] or scored[:1]
+        scored = sorted(((len(q & _tokens(d["text"])), d) for d in self.docs),
+                        key=lambda s: s[0], reverse=True)
+        # Only return docs with real token overlap. Returning a zero-overlap
+        # "best" doc would inject a phantom typology match into every case
+        # (badly skews real-data scoring); an empty list is the honest answer.
+        return [d for score, d in scored[:k] if score > 0]
