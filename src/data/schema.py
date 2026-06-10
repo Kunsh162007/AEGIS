@@ -4,7 +4,7 @@ normalise into these types.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Optional
 
@@ -59,7 +59,7 @@ class Evidence(BaseModel):
 class Case(BaseModel):
     case_id: str
     alert_type: str                  # structuring | mule_network | layering | profile_anomaly | adverse_media
-    opened_at: datetime = Field(default_factory=datetime.utcnow)
+    opened_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     tenant_id: str = "bank-alpha"
     parties: list[Party] = Field(default_factory=list)
     transactions: list[Transaction] = Field(default_factory=list)

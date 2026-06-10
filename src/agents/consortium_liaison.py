@@ -4,8 +4,7 @@ boundary — never names, accounts, or transactions.
 """
 from __future__ import annotations
 
-from ..band.interface import CaseRoom
-from ..band.stub import LocalMesh
+from ..band.interface import BandMesh, CaseRoom
 from ..data.schema import Case, Verdict
 from ..graph import EntityGraph
 from .base import BaseAgent
@@ -29,7 +28,7 @@ class ConsortiumLiaisonAgent(BaseAgent):
             "passthrough": bool(hub),
         }
 
-    def query_peers(self, case: Case, mesh: LocalMesh, peers: list[str],
+    def query_peers(self, case: Case, mesh: BandMesh, peers: list[str],
                     room: CaseRoom) -> str | None:
         pattern = self.derive_pattern(case)
         room.post(self.name, "consortium",

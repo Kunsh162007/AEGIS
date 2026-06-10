@@ -1,6 +1,8 @@
 """The AEGIS investigation pipeline (§6). Framework-agnostic by default; if
-USE_FRAMEWORKS=true it routes the same agent logic through CrewAI (specialists)
-and LangGraph (verification) — see agents/frameworks/.
+USE_FRAMEWORKS=true it routes the SAME agent logic through CrewAI (specialists)
+and a real LangGraph StateGraph (verification trio) — see agents/frameworks/.
+Both framework paths degrade to the agnostic path if their library is absent, so
+the system is always runnable.
 
     alert -> intake opens room + recruits
           -> specialists post cited evidence
@@ -18,6 +20,7 @@ from .agents.adjudicator import AdjudicatorAgent
 from .agents.challenger import ChallengerAgent
 from .agents.consortium_liaison import ConsortiumLiaisonAgent
 from .agents.external_intel import ExternalIntelAgent
+from .agents.frameworks import crew_specialists, langgraph_verification
 from .agents.identity_kyc import IdentityKycAgent
 from .agents.intake import IntakeAgent
 from .agents.network_graph import NetworkGraphAgent
@@ -26,7 +29,7 @@ from .agents.transaction_pattern import TransactionPatternAgent
 from .agents.verifier import VerifierAgent
 from .band import LocalMesh, get_mesh
 from .band.interface import AuditEvent, Credential
-from .band.stub import LocalMesh as _LocalMesh
+from .config import settings
 from .data.schema import Case, CaseResult, Decision
 from .knowledge import KnowledgeBase
 from .models.client import ModelClient
@@ -44,12 +47,14 @@ DEFAULT_SCOPES = {"txn:read", "kyc:read", "kb:read"}
 
 class Orchestrator:
     def __init__(self, mesh: LocalMesh | None = None, policy: AutonomyPolicy | None = None,
-                 kb: KnowledgeBase | None = None, officer_scopes: set[str] | None = None):
+                 kb: KnowledgeBase | None = None, officer_scopes: set[str] | None = None,
+                 use_frameworks: bool | None = None):
         self.model = ModelClient()
         self.mesh = mesh or get_mesh()
         self.kb = kb or KnowledgeBase()
         self.policy = policy or AutonomyPolicy()
         self.scopes = officer_scopes if officer_scopes is not None else set(DEFAULT_SCOPES)
+        self.use_frameworks = settings.use_frameworks if use_frameworks is None else use_frameworks
 
         self.intake = IntakeAgent(self.model)
         self.challenger = ChallengerAgent(self.model)
@@ -78,26 +83,31 @@ class Orchestrator:
 
         # 1) Intake recruits specialists for this alert type.
         roles = self.intake.recruit_for(case, room)
+        specialists = self._make_specialists(roles)
 
         # 2) Specialists post cited evidence (credential traversal enforced).
-        evidence = []
-        for agent in self._make_specialists(roles):
-            evidence.extend(agent.investigate(case, room))
+        #    Optionally as a CrewAI crew; degrades to direct execution.
+        if self.use_frameworks:
+            evidence = crew_specialists.run_specialist_crew(specialists, case, room)
+        else:
+            evidence = []
+            for agent in specialists:
+                evidence.extend(agent.investigate(case, room))
 
-        # 3) Challenger argues the innocent case.
-        challenge = self.challenger.challenge(case, evidence, room)
-
-        # 4) Verifier audits — rejects uncited / rebutted claims.
-        evidence, rejected = self.verifier.verify(case, evidence, challenge, room)
-
-        # 5) Consortium: ask peer banks about the abstract pattern (optional, §7).
-        consortium_note = None
-        if peers and isinstance(self.mesh, _LocalMesh):
-            consortium_note = self.liaison.query_peers(case, self.mesh, peers, room)
-
-        # 6) Adjudicate + apply autonomy policy.
-        result = self.adjudicator.adjudicate(case, evidence, challenge, rejected, room,
-                                             consortium_note=consortium_note)
+        # 3-6) Challenger -> Verifier -> Consortium -> Adjudicator.
+        #      As a real LangGraph StateGraph when enabled+available, else inline.
+        if self.use_frameworks and langgraph_verification.frameworks_available():
+            result = langgraph_verification.run_verification_graph(
+                challenger=self.challenger, verifier=self.verifier, liaison=self.liaison,
+                adjudicator=self.adjudicator, case=case, evidence=evidence, room=room,
+                mesh=self.mesh, peers=peers or [])
+        else:
+            challenge = self.challenger.challenge(case, evidence, room)
+            evidence, rejected = self.verifier.verify(case, evidence, challenge, room)
+            consortium_note = (self.liaison.query_peers(case, self.mesh, peers, room)
+                               if peers else None)
+            result = self.adjudicator.adjudicate(case, evidence, challenge, rejected, room,
+                                                 consortium_note=consortium_note)
 
         # 7) Escalated cases get a drafted, evidence-cited SAR; human gate requested.
         if result.decision == Decision.ESCALATE:

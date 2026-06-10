@@ -1,22 +1,23 @@
 """Framework adapters — the 'two frameworks on purpose' production path (§6, §19).
 
 The core orchestrator runs WITHOUT these (USE_FRAMEWORKS=false) so the system is
-always demoable. When USE_FRAMEWORKS=true, wrap the SAME agent logic so that:
+always demoable. When USE_FRAMEWORKS=true:
 
-  * the four CrewAI specialists run as a CrewAI Crew, and
-  * the Challenger/Verifier/Adjudicator run as a LangGraph StateGraph,
+  * the four specialists run as a CrewAI crew      -> crew_specialists.py
+  * the Challenger/Verifier/Consortium/Adjudicator run as a real LangGraph
+    StateGraph                                     -> langgraph_verification.py
 
-both joining the Band room. The agents' `investigate()` / `challenge()` /
-`verify()` / `adjudicate()` methods are framework-agnostic on purpose — these
-adapters only wire them into CrewAI Tasks and LangGraph nodes; no logic moves.
+The SAME agent methods (`investigate()` / `challenge()` / `verify()` /
+`query_peers()` / `adjudicate()`) are reused unchanged — the adapters only move
+who drives control flow into the framework. Each adapter exposes
+`frameworks_available()` and degrades to the agnostic path if its library is
+absent, so nothing is ever required to run AEGIS.
 
-Left as scaffolding because CrewAI + LangGraph add heavy deps and must be wired
-against live model keys. Fill in once Featherless/AI-ML keys are set:
-
-    from crewai import Agent as CrewAgent, Task, Crew
-    from langgraph.graph import StateGraph
-
-See README "Production framework path" for the step-by-step.
+LangGraph runs with zero API keys (graph topology is pure Python; agents narrate
+through the mock client). CrewAI's heavier stack may need keys/installation;
+when unavailable the crew adapter runs the specialists directly and says so in
+the audit stream.
 """
+from . import crew_specialists, langgraph_verification
 
-USE_FRAMEWORKS_DOC = __doc__
+__all__ = ["crew_specialists", "langgraph_verification"]

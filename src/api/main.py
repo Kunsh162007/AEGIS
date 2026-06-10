@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -17,10 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from ..band import LocalMesh
-from ..band.interface import AuditEvent, Credential
-from ..data.synthetic import DEMO_FIXTURES, get_fixture
+from ..band.interface import AuditEvent
+from ..data.synthetic import DEMO_FIXTURES, get_fixture, labeled_dataset
 from ..eval.harness import evaluate
-from ..data.synthetic import labeled_dataset
 from ..orchestrator import Orchestrator
 
 app = FastAPI(title="AEGIS", version="0.2.0")
@@ -95,7 +94,7 @@ async def run_eval(limit: int = 40) -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "ts": datetime.utcnow().isoformat()}
+    return {"status": "ok", "ts": datetime.now(UTC).isoformat()}
 
 
 # ── Serve the built dashboard (single-origin production deploy) ──────────────

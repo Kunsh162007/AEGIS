@@ -8,7 +8,7 @@ provable on screen.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Callable
 
 from .interface import AuditEvent, BandMesh, CaseRoom, Credential
@@ -28,7 +28,7 @@ class LocalRoom(CaseRoom):
         self.members: list[str] = []
 
     def _record(self, actor: str, kind: str, payload: dict) -> None:
-        ev = AuditEvent(ts=datetime.utcnow(), room_id=self.room_id, actor=actor,
+        ev = AuditEvent(ts=datetime.now(UTC), room_id=self.room_id, actor=actor,
                         kind=kind, authority=self.credential.officer_id, payload=payload)
         self._events.append(ev)
         self._emit(ev)

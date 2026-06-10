@@ -51,12 +51,21 @@ class ModelClient:
 
     # -- provider resolution ----------------------------------------------
     def _resolve_provider(self, tier: str) -> str:
+        """Pick the backend for this call.
+
+          mock              -> everything offline (no keys).
+          auto              -> route BY TIER (reasoning->aimlapi, specialist->
+                               featherless, ...) per settings.tier_routing.
+          <a named provider> -> force that one provider for every tier.
+
+        In every case, if the chosen provider has no API key we fall back to the
+        configured fallback (Ollama, which needs none) so a half-configured .env
+        never crashes mid-run.
+        """
         if self.provider == "mock":
             return "mock"
-        # Map the agent tier -> configured provider; fall back if key missing.
-        chosen = settings.tier_routing.get(tier, self.provider)
-        if chosen == self.provider or self.provider in settings.providers:
-            chosen = self.provider if self.provider in settings.providers else chosen
+        chosen = (settings.tier_routing.get(tier, settings.tier_routing.get("fallback", "ollama"))
+                  if self.provider == "auto" else self.provider)
         cfg = settings.providers.get(chosen)
         if cfg and not cfg.api_key and chosen != "ollama":
             return settings.tier_routing.get("fallback", "ollama")

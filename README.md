@@ -71,9 +71,12 @@ Edit `.env`:
 
 | Want | Set |
 |------|-----|
-| Frontier reasoning (Challenger/Verifier/Adjudicator) | `MODEL_PROVIDER=aimlapi`, `AIMLAPI_KEY=...` |
-| Open-source specialists | `MODEL_PROVIDER=featherless`, `FEATHERLESS_KEY=...` |
+| **Tiered (recommended): reasoning→AI/ML API, specialists→Featherless** | `MODEL_PROVIDER=auto` (+ `AIMLAPI_KEY`, `FEATHERLESS_KEY`) |
+| Force frontier reasoning everywhere | `MODEL_PROVIDER=aimlapi`, `AIMLAPI_KEY=...` |
+| Force open-source everywhere | `MODEL_PROVIDER=featherless`, `FEATHERLESS_KEY=...` |
 | Free local fallback | `MODEL_PROVIDER=ollama` (install Ollama, `ollama pull llama3.1`) |
+
+Any tier whose key is missing falls back to Ollama automatically, so a partly-configured `.env` never crashes.
 
 Responses are cached on disk (`MODEL_CACHE=true`) so re-running a demo costs nothing.
 The specialists' *real* signal (stats/graph/retrieval) works the same regardless of
@@ -131,8 +134,11 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 
 - **Band** is behind a local stub until the official SDK is wired. Agent
   logic is decoupled so this is a clean swap, not a rewrite.
-- **CrewAI / LangGraph** are the intended production frameworks; the core runs
-  framework-agnostic so it's always demoable. See `src/agents/frameworks/`.
+- **LangGraph** powers the verification trio as a real `StateGraph` when
+  `USE_FRAMEWORKS=true` (runs offline, no keys); **CrewAI** wraps the specialist
+  crew (heavier, may need a key). The core also runs framework-agnostic so it's
+  always demoable, and each adapter degrades if its lib is absent. See
+  `src/agents/frameworks/`.
 - **Synthetic eval numbers are a sanity check; the public-benchmark number is the
   real one.** No real PII anywhere.
 
