@@ -8,7 +8,6 @@
 > through **Band**.
 
 Dual submission: **Band of Agents Hackathon** (Track 3) + **FAR AWAY 2026**.
-Full design and pitch: [`PROPOSAL.md`](./PROPOSAL.md).
 
 ---
 
