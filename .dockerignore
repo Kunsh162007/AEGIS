@@ -1,0 +1,26 @@
+# Keep the build context small and reproducible.
+.git/
+.venv/
+venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.cache/
+data_cache/
+*.sqlite
+
+# Node / Next build artifacts (reinstalled/rebuilt inside the image)
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+
+# Secrets & docs not needed at runtime
+.env
+*.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

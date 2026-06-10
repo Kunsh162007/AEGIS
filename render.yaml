@@ -1,0 +1,22 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# One Docker web service: FastAPI backend serving the API + the built dashboard.
+# Deploys with NO API keys (mock mode). Add keys later as env vars to switch on
+# real models / Band (see DEPLOY.md).
+services:
+  - type: web
+    name: aegis
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: MODEL_PROVIDER
+        value: mock
+      - key: MODEL_CACHE
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Render injects $PORT automatically — do not set it here.

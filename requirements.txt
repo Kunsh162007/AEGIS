@@ -1,0 +1,32 @@
+# ── Core (required to run the offline MVP) ───────────────────────────────
+pydantic>=2.6
+python-dotenv>=1.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sse-starlette>=2.1
+networkx>=3.2
+
+# ── Public-dataset loading for the accuracy benchmark (Section 9) ─────────
+pandas>=2.2
+
+# ── Production model providers (OpenAI-compatible: AI/ML API, Featherless) ─
+openai>=1.30            # used as a generic OpenAI-compatible client
+
+# ── Optional: a stronger ML baseline for the eval (Section 9). Skip on
+# Python 3.14 if wheels are unavailable — the heuristic baseline works without it.
+# scikit-learn>=1.4
+# lightgbm>=4.3
+
+# ── Agent frameworks (the "two frameworks on purpose" scoring story) ─────
+# These are heavier. The core pipeline runs WITHOUT them (USE_FRAMEWORKS=false).
+# Install when you want the CrewAI + LangGraph production path.
+# crewai>=0.30
+# langgraph>=0.1
+# langchain-openai>=0.1
+
+# ── Knowledge base (optional; falls back to built-in keyword store) ──────
+# chromadb>=0.5
+# sentence-transformers>=2.7
+
+# ── Band SDK (added after the June 12 kickoff — name TBD from official docs) ─
+# band-sdk>=0.0            # <-- replace with the real package once docs are in hand
