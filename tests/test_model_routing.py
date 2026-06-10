@@ -30,3 +30,14 @@ def test_explicit_provider_forces_all_tiers(monkeypatch):
     client = ModelClient(provider="featherless")
     assert client._resolve_provider("reasoning") == "featherless"
     assert client._resolve_provider("specialist") == "featherless"
+
+
+def test_provider_failure_degrades_to_mock(monkeypatch):
+    # A real provider that errors must not crash — it falls back to mock text.
+    monkeypatch.setattr(settings.providers["featherless"], "api_key", "k")
+    client = ModelClient(provider="featherless")
+    def boom(*a, **k):
+        raise RuntimeError("network down / bad key")
+    monkeypatch.setattr(client, "_openai_compatible", boom)
+    out = client.complete("hello world", tier="specialist", agent="transaction_pattern")
+    assert isinstance(out, str) and out  # got mock narration, no exception

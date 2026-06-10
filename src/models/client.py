@@ -41,7 +41,15 @@ class ModelClient:
         if provider == "mock" or self.provider == "mock":
             text = self._mock(prompt, system=system, agent=agent)
         else:
-            text = self._openai_compatible(cfg, prompt, system=system, max_tokens=max_tokens)
+            # Every feature must degrade to mock (CLAUDE rule 2): if a real
+            # provider errors (bad/missing key, network, rate limit, Ollama not
+            # running), fall back to deterministic mock narration so a live demo
+            # never crashes. The fallback is recorded transparently in the ledger.
+            try:
+                text = self._openai_compatible(cfg, prompt, system=system, max_tokens=max_tokens)
+            except Exception:
+                provider, model = f"{provider}->mock", "mock"
+                text = self._mock(prompt, system=system, agent=agent)
 
         TOKEN_LEDGER.append({"agent": agent, "provider": provider, "model": model,
                              "approx_tokens": len(prompt) // 4 + len(text) // 4})
