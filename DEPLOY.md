@@ -81,7 +81,7 @@ Variable*), then redeploy. Never commit keys to git.
 |------|---------------------------|----------------------|
 | Frontier reasoning for Challenger/Verifier/Adjudicator | `MODEL_PROVIDER=aimlapi`, `AIMLAPI_KEY=…` | https://aimlapi.com (free starter credit) |
 | Open-source models for the specialists | `MODEL_PROVIDER=featherless`, `FEATHERLESS_KEY=…` | https://featherless.ai |
-| Real Band coordination (after the SDK is wired) | `BAND_API_KEY=…`, `BAND_BASE_URL=…`, `BAND_TENANT_ID=…` | Band kickoff / official SDK docs |
+| Real Band coordination (after the SDK is wired) | `BAND_API_KEY=…`, `BAND_BASE_URL=…`, `BAND_TENANT_ID=…` | Official Band SDK docs |
 | Public-benchmark headline accuracy (§9) | `PUBLIC_DATASET_PATH=…`, `PUBLIC_DATASET_KIND=paysim\|ibm_aml\|elliptic` | Kaggle (download a CSV; see README §9) |
 
 Notes:

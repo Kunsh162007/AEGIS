@@ -1,5 +1,5 @@
 """Abstract Band contract — the behaviours from the proposal (§4, §6), not the
-real method names. The real SDK is mapped onto this after kickoff.
+real method names. The real SDK is mapped onto this contract.
 """
 from __future__ import annotations
 

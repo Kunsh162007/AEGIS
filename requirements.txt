@@ -28,5 +28,5 @@ openai>=1.30            # used as a generic OpenAI-compatible client
 # chromadb>=0.5
 # sentence-transformers>=2.7
 
-# ── Band SDK (added after the June 12 kickoff — name TBD from official docs) ─
+# ── Band SDK (added from the official Band SDK docs — package name TBD) ─
 # band-sdk>=0.0            # <-- replace with the real package once docs are in hand

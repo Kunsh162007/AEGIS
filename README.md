@@ -7,8 +7,6 @@
 > customer data crossing a boundary** — coordinated, governed, and audited
 > through **Band**.
 
-Dual submission: **Band of Agents Hackathon** (Track 3) + **FAR AWAY 2026**.
-
 ---
 
 ## ✨ Why this isn't an "AI wrapper"
@@ -131,7 +129,7 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 
 ## ⚠️ Status & honesty notes
 
-- **Band** is behind a local stub until the official SDK is wired (kickoff). Agent
+- **Band** is behind a local stub until the official SDK is wired. Agent
   logic is decoupled so this is a clean swap, not a rewrite.
 - **CrewAI / LangGraph** are the intended production frameworks; the core runs
   framework-agnostic so it's always demoable. See `src/agents/frameworks/`.
