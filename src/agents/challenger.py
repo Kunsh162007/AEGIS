@@ -23,6 +23,13 @@ INNOCENT_EXPLANATIONS = {
 }
 
 
+# An innocent explanation may only clear *soft, behavioural* flags (a profile
+# anomaly). It must NEVER wave away structural laundering evidence (mule hubs,
+# cycles, pass-through, structuring) — those are the fingerprints that survive
+# the strongest innocent story. This cap protects recall when the LLM is on.
+_REBUTTABLE_CATEGORIES = ["kyc:profile"]
+
+
 class ChallengerAgent(BaseAgent):
     name = "challenger"
     tier = "reasoning"
@@ -47,6 +54,13 @@ class ChallengerAgent(BaseAgent):
                                "credit alone is a weak basis for suspicion.",
                 "source": "txn:count=1", "targets": ["kyc:profile"]})
 
+        # LLM-proposed innocent explanations (AI/ML API reasoning tier). These
+        # GENERALISE the hardcoded keyword list to any legitimate narrative the
+        # transaction notes support — the single biggest false-positive lever on
+        # real data. Constrained to soft categories; the Verifier still requires
+        # the rebuttal to be grounded, so the LLM can't fabricate a clearance.
+        rebuttals.extend(self._llm_innocent_explanations(case, evidence))
+
         argument = self.narrate(
             f"Argue the innocent explanation for case {case.case_id}. "
             f"Rebuttals: {[r['explanation'] for r in rebuttals]}",
@@ -54,3 +68,29 @@ class ChallengerAgent(BaseAgent):
 
         room.post(self.name, "challenge", {"argument": argument, "rebuttals": rebuttals})
         return {"argument": argument, "rebuttals": rebuttals}
+
+    def _llm_innocent_explanations(self, case: Case, evidence: list[Evidence]) -> list[dict]:
+        """Ask the reasoning model for a plausible legitimate explanation of the
+        flagged behaviour. Returns [] in mock mode or on any failure (so the
+        deterministic demo and the offline path are unchanged)."""
+        if getattr(self.model, "provider", "mock") == "mock":
+            return []  # offline/mock: keep the deterministic keyword behaviour
+        try:
+            notes = "; ".join(t.note for t in case.transactions[:8] if t.note)
+            flagged = [e.claim for e in evidence
+                       if e.supports == Verdict.SUSPICIOUS][:6]
+            out = self.narrate(
+                f"Transaction notes: {notes or '(none)'}\n"
+                f"Flagged concerns: {flagged}\n"
+                "If a plausible LEGITIMATE explanation fits the customer's behaviour "
+                "(e.g. salary/bonus, property sale, inheritance, loan drawdown, "
+                "business revenue, refund), give it in ONE sentence. If the activity "
+                "has no innocent explanation, reply with exactly: NONE",
+                system="You are a meticulous red-team AML analyst. Be terse and concrete.")
+            text = out.strip()
+            if not text or text.upper().startswith("NONE"):
+                return []
+            return [{"explanation": text[:300], "source": "llm:reasoning",
+                     "targets": list(_REBUTTABLE_CATEGORIES)}]
+        except Exception:
+            return []

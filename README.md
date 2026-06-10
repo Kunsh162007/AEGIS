@@ -80,7 +80,10 @@ Any tier whose key is missing falls back to Ollama automatically, so a partly-co
 
 Responses are cached on disk (`MODEL_CACHE=true`) so re-running a demo costs nothing.
 The specialists' *real* signal (stats/graph/retrieval) works the same regardless of
-provider — the model only writes the narration.
+provider. With a reasoning key on, the **Challenger** additionally uses the model to
+propose case-specific *innocent explanations* (generalising the keyword list) — the
+Verifier still gates them, and they can only clear soft profile flags, never
+structural laundering evidence. Everything degrades to mock if a call fails.
 
 ## 📊 The public accuracy benchmark (the credible number — §9)
 
