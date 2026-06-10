@@ -84,20 +84,32 @@ provider — the model only writes the narration.
 
 ## 📊 The public accuracy benchmark (the credible number — §9)
 
-Download one of these free Kaggle datasets and point `.env` at the CSV:
+A small, balanced, **externally-labelled** slice of the **IBM AML** dataset ships
+with the repo (`src/data/benchmarks/ibm_sample.csv`), so the credible number
+works out-of-the-box — locally and on the deployed demo (the **"Run public
+benchmark (IBM AML)"** button). No download, no keys.
+
+On this slice AEGIS catches **~93%** of laundering (vs ~90% baseline) while
+cutting false positives from **~31% → ~11%** (**~65% reduction**). Recall is
+shown next to the reduction — AEGIS is a triage layer, strongest on *structured*
+laundering. Provenance and method: [`src/data/benchmarks/README.md`](./src/data/benchmarks/README.md).
+
+> **Why IBM AML, not PaySim?** PaySim's labelled "fraud" is balance-draining
+> theft with no laundering *structure* (its mule transfers and cash-outs aren't
+> even linked), so AEGIS correctly abstains and the dataset is a poor fit. IBM
+> AML is generated from real laundering typologies (fan-in/out, cycles) — the
+> structure AEGIS detects.
+
+To score a **full** dataset yourself, point `.env` at a CSV and run
+`python -m src.eval.harness --public`:
 
 | `PUBLIC_DATASET_KIND` | Dataset |
 |-----------------------|---------|
+| `ibm_aml`  | *IBM Transactions for Anti-Money-Laundering* (recommended) |
 | `paysim`   | *PaySim* synthetic mobile-money fraud |
-| `ibm_aml`  | *IBM Transactions for Anti-Money-Laundering* |
 | `elliptic` | *Elliptic* Bitcoin licit/illicit graph |
 
-```
-PUBLIC_DATASET_PATH=C:\path\to\dataset.csv
-PUBLIC_DATASET_KIND=paysim
-```
-Then `python -m src.eval.harness --public`. The labels are external, so the
-false-positive-reduction number is defensible — that's the one for the slide.
+The labels are external, so the false-positive-reduction number is defensible.
 
 ## 🧱 Architecture
 

@@ -92,6 +92,20 @@ async def run_eval(limit: int = 40) -> dict:
     return await asyncio.to_thread(evaluate, cases, "synthetic")
 
 
+@app.get("/api/eval/public")
+async def run_eval_public(limit: int = 200) -> dict:
+    """Baseline-vs-AEGIS on a bundled slice of a PUBLIC benchmark (IBM AML,
+    HI-Small) with externally-authored labels — the credible number (§9). Falls
+    back to a clear message if the sample isn't bundled."""
+    from ..data.public_loader import bundled_sample_path, load_public
+
+    path = bundled_sample_path("ibm")
+    if not path:
+        return {"error": "no bundled public benchmark sample available"}
+    cases = await asyncio.to_thread(load_public, path, "generic", limit)
+    return await asyncio.to_thread(evaluate, cases, "public:ibm-aml-sample")
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "ts": datetime.now(UTC).isoformat()}

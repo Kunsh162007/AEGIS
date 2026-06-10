@@ -16,7 +16,6 @@ from ..data.schema import Case, Evidence, Verdict
 from .base import BaseAgent
 
 _VALID_PREFIX = ("txn:", "graph:", "kb:", "kyc:")
-_IDENT = re.compile(r"[A-Za-z0-9_]+")
 
 
 class VerifierAgent(BaseAgent):
@@ -30,13 +29,16 @@ class VerifierAgent(BaseAgent):
             return False
         # Rule 1b: if the source cites concrete record ids (in [] or ()), at least
         # one must actually exist in the case — catches hallucinated references.
+        # Match the WHOLE comma-separated reference (account ids may contain
+        # hyphens etc., e.g. "010-8000EBD0"); don't split inside an id.
         known = {t.txn_id for t in case.transactions} | {p.account for p in case.parties}
         bracketed = re.findall(r"[\[(]([^\])]+)[\])]", src)
         record_like: set[str] = set()
         for chunk in bracketed:
-            for tok in _IDENT.findall(chunk):
-                if any(ch.isdigit() for ch in tok):  # looks like an id, not a word
-                    record_like.add(tok)
+            for part in chunk.split(","):
+                part = part.strip()
+                if part and any(ch.isdigit() for ch in part):  # looks like an id, not a word
+                    record_like.add(part)
         if record_like and not (record_like & known):
             return False
         return True

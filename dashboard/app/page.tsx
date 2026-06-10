@@ -8,6 +8,7 @@ type Result = {
   rejected_claims: string[]; consortium_confirmation: string | null; report: string;
 };
 type EvalR = {
+  dataset?: string;
   baseline: { false_positive_rate: number; recall_catch_rate: number; false_positives: number };
   aegis: { false_positive_rate: number; recall_catch_rate: number; false_positives: number };
   false_positive_reduction_pct: number;
@@ -46,8 +47,14 @@ export default function Home() {
     };
     es.onerror = () => { setRunning(false); es.close(); };
   }
+  const [evalBusy, setEvalBusy] = useState(false);
   function runEval() {
-    fetch("/api/eval?limit=40").then((r) => r.json()).then(setEvalR).catch(() => {});
+    fetch("/api/eval?limit=48").then((r) => r.json()).then(setEvalR).catch(() => {});
+  }
+  function runEvalPublic() {
+    setEvalBusy(true);
+    fetch("/api/eval/public?limit=200").then((r) => r.json())
+      .then(setEvalR).catch(() => {}).finally(() => setEvalBusy(false));
   }
 
   const verified = result?.evidence.filter((e) => e.verified) ?? [];
@@ -70,7 +77,10 @@ export default function Home() {
         <button className="primary" onClick={run} disabled={running}>
           {running ? "Investigating…" : "▶ Run investigation"}
         </button>
-        <button onClick={runEval}>📊 Run accuracy eval</button>
+        <button onClick={runEval}>📊 Run accuracy eval (synthetic)</button>
+        <button onClick={runEvalPublic} disabled={evalBusy}>
+          {evalBusy ? "Scoring…" : "🏦 Run public benchmark (IBM AML)"}
+        </button>
       </div>
 
       <div className="grid">
@@ -127,9 +137,13 @@ export default function Home() {
 
       {/* Accuracy panel */}
       <div className="panel" style={{ marginTop: 16 }}>
-        <h2>Baseline (single-pass) vs AEGIS — accuracy</h2>
-        {!evalR && <div className="sub">Press “Run accuracy eval”. For the headline number, point the
-          backend at a public AML benchmark (PaySim / IBM AML / Elliptic).</div>}
+        <h2>Baseline (single-pass) vs AEGIS — accuracy
+          {evalR?.dataset && <span className="src"> · {evalR.dataset.startsWith("public")
+            ? "IBM AML public benchmark (external labels)" : "synthetic sanity check"}</span>}
+        </h2>
+        {!evalR && <div className="sub">“Run accuracy eval (synthetic)” is a quick sanity check;
+          “Run public benchmark (IBM AML)” scores a slice of a real AML dataset with
+          externally-authored labels — the credible number (§9).</div>}
         {evalR && (
           <>
             <div className="metrics">

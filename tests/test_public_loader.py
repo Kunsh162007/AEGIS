@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.data.public_loader import load_public
+from src.data.public_loader import bundled_sample_path, load_public
 from src.data.schema import Verdict
 from src.eval.harness import evaluate
 from src.orchestrator import Orchestrator
@@ -60,3 +60,15 @@ def test_aegis_actually_engages_on_public_style_data(tmp_path):
     cases = load_public(path=csv, kind="paysim", limit=20)
     report = evaluate(cases, "public-test")
     assert report["aegis"]["recall_catch_rate"] > 0.0
+
+
+def test_bundled_ibm_benchmark_engages_and_does_not_worsen_fp():
+    """The committed IBM AML slice (powers the demo's 'public benchmark' button)
+    must let AEGIS catch laundering structure and never have MORE false positives
+    than the size-only baseline. Guards the whole public-benchmark path."""
+    path = bundled_sample_path("ibm")
+    assert path, "ibm_sample.csv should ship with the repo"
+    report = evaluate(load_public(path=path, kind="generic", limit=200),
+                      "public:ibm-aml-sample")
+    assert report["aegis"]["recall_catch_rate"] >= 0.6
+    assert report["aegis"]["false_positive_rate"] <= report["baseline"]["false_positive_rate"]

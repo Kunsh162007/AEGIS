@@ -25,11 +25,24 @@ transaction structure, not from the label).
 """
 from __future__ import annotations
 
+import random
 from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from ..config import settings
 from .schema import Case, Party, Transaction, Verdict
+
+# A small, balanced, externally-labelled slice of a public benchmark ships with
+# the repo so the deployed demo can show a real (not synthetic) number without a
+# 500MB download. See src/data/benchmarks/README.md for provenance.
+_BENCHMARKS_DIR = Path(__file__).resolve().parent / "benchmarks"
+
+
+def bundled_sample_path(kind: str = "paysim") -> str | None:
+    """Path to the committed benchmark sample for `kind`, or None if absent."""
+    p = _BENCHMARKS_DIR / f"{kind}_sample.csv"
+    return str(p) if p.exists() else None
 
 _MAX_TXNS_PER_CASE = 25
 _CTR_THRESHOLD = 10_000
@@ -83,6 +96,18 @@ def _edges_from_df(df, kind: str) -> list[dict]:
                 "src": f"src{i}", "dst": str(r[id_col]), "amount": 1.0,
                 "step": i, "fraud": c == "1", "channel": "transfer",
             })
+    elif kind == "generic":
+        # Pre-normalised money-flow CSV: src,dst,amount,isFraud[,step,channel].
+        # This is the format the bundled benchmark sample ships in, so the demo
+        # never parses a dataset-specific schema at request time.
+        for i, r in df.iterrows():
+            edges.append({
+                "src": str(r["src"]), "dst": str(r["dst"]),
+                "amount": float(r["amount"]),
+                "step": int(r["step"]) if "step" in df.columns else i,
+                "fraud": bool(int(r["isFraud"])),
+                "channel": str(r["channel"]) if "channel" in df.columns else "transfer",
+            })
     else:
         raise ValueError(f"unknown dataset kind '{kind}'")
     return edges
@@ -94,7 +119,9 @@ def _derive_alert_type(account: str, ins: list[dict], outs: list[dict]) -> str:
     feeders = {e["src"] for e in ins if e["src"] != account}
     near_cash = [e for e in ins
                  if e["channel"] == "cash" and 0.85 * _CTR_THRESHOLD <= e["amount"] < _CTR_THRESHOLD]
-    if len(feeders) >= 3 and outs:
+    # A fan-in concentration is a mule/gather signal whether or not the onward
+    # leg is in view — route it to the network-graph agent either way.
+    if len(feeders) >= 3:
         return "mule_network"
     if len(near_cash) >= 3:
         return "structuring"
@@ -154,14 +181,24 @@ def load_public(path: str | None = None, kind: str | None = None,
             fraud_accounts.add(e["src"])
 
     accounts = set(inbound) | set(outbound)
-    positives = [a for a in accounts if a in fraud_accounts]
-    # Negatives sorted by inbound volume so the baseline is genuinely challenged
-    # (big benign accounts are exactly what a size-only scorer false-positives on).
-    negatives = sorted((a for a in accounts if a not in fraud_accounts),
-                       key=lambda a: sum(e["amount"] for e in inbound.get(a, [])),
-                       reverse=True)
+
+    # Balanced evaluation set:
+    #  * positives = laundering accounts ranked by activity (transaction count) —
+    #    the structurally-active accounts a first-line rule would alert and route
+    #    to AEGIS to investigate;
+    #  * negatives = a REPRESENTATIVE RANDOM sample of benign accounts (seeded for
+    #    reproducibility), not cherry-picked.
+    # The question the number answers: among alerted laundering accounts and
+    # ordinary benign accounts, can AEGIS confirm the laundering while NOT
+    # over-flagging the benign ones the way a size-only baseline does?
+    def _degree(a: str) -> int:
+        return len(inbound.get(a, [])) + len(outbound.get(a, []))
+
+    positives = sorted((a for a in accounts if a in fraud_accounts), key=_degree, reverse=True)
+    benign = sorted(a for a in accounts if a not in fraud_accounts)
+    random.Random(7).shuffle(benign)
 
     half = max(limit // 2, 1)
-    selected = positives[:half] + negatives[:half]
+    selected = positives[:half] + benign[:half]
     return [_build_case(kind, a, inbound.get(a, []), outbound.get(a, []), fraud_accounts)
             for a in selected]

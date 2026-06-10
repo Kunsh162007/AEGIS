@@ -88,10 +88,12 @@ Notes:
 - `MODEL_CACHE=true` (already set) caches LLM responses on disk so re-running a
   demo costs nothing. On Render's ephemeral free disk the cache resets on
   redeploy — fine for a demo; attach a Render Disk if you want it to persist.
-- `PUBLIC_DATASET_PATH` needs the CSV to be *inside the image or on a mounted
-  disk*. For a one-off headline number it's easier to run
-  `python -m src.eval.harness --public` locally and screenshot it; the live demo
-  uses the synthetic eval endpoint.
+- **The public-benchmark number works on the deployed demo out of the box** — a
+  small IBM-AML slice (`src/data/benchmarks/ibm_sample.csv`) ships in the image,
+  so the dashboard's "Run public benchmark (IBM AML)" button needs no dataset and
+  no keys. To score a *full* dataset, set `PUBLIC_DATASET_PATH` (the CSV must be
+  inside the image or on a mounted disk) and run `python -m src.eval.harness
+  --public`.
 - Ollama (`MODEL_PROVIDER=ollama`) is a *local-only* fallback — it expects a
   server on `localhost:11434`, so it isn't used in the cloud deploy.
 
