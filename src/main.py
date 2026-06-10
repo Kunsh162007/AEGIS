@@ -52,7 +52,7 @@ def main() -> None:
     orch = Orchestrator()
     result = orch.investigate(case, peers, on_event=_print_event)
 
-    print(f"\n--- VERDICT ---")
+    print("\n--- VERDICT ---")
     print(f"  Verdict:    {result.verdict.value}  (confidence {result.confidence})")
     print(f"  Decision:   {result.decision.value}")
     print(f"  Rationale:  {result.rationale}")

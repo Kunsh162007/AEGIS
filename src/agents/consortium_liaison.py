@@ -5,7 +5,7 @@ boundary — never names, accounts, or transactions.
 from __future__ import annotations
 
 from ..band.interface import BandMesh, CaseRoom
-from ..data.schema import Case, Verdict
+from ..data.schema import Case
 from ..graph import EntityGraph
 from .base import BaseAgent
 

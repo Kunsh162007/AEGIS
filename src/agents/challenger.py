@@ -39,12 +39,10 @@ class ChallengerAgent(BaseAgent):
 
         # Find innocent explanations grounded in the transaction notes.
         notes = " ".join(t.note.lower() for t in case.transactions)
-        seen_targets: set[str] = set()
         for kw, spec in INNOCENT_EXPLANATIONS.items():
             if kw in notes:
                 rebuttals.append({"explanation": spec["explanation"],
                                   "source": f"txn:note~{kw}", "targets": spec["targets"]})
-                seen_targets.update(spec["targets"])
 
         # Single-transaction "anomalies" are weak: one big legal credit is common —
         # this rebuts a profile anomaly, not graph/structuring evidence.
@@ -88,7 +86,10 @@ class ChallengerAgent(BaseAgent):
                 "has no innocent explanation, reply with exactly: NONE",
                 system="You are a meticulous red-team AML analyst. Be terse and concrete.")
             text = out.strip()
-            if not text or text.upper().startswith("NONE"):
+            # Ignore "no explanation", and ignore mock/fallback narration (the
+            # mock client prefixes every reply with "[<agent>] ") so an auto-mode
+            # run with no working key can't inject a bogus clearance.
+            if not text or text.upper().startswith("NONE") or text.startswith(f"[{self.name}]"):
                 return []
             return [{"explanation": text[:300], "source": "llm:reasoning",
                      "targets": list(_REBUTTABLE_CATEGORIES)}]

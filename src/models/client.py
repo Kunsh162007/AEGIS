@@ -104,10 +104,3 @@ class ModelClient:
         demo reads naturally without any API key."""
         head = prompt.strip().splitlines()[0] if prompt.strip() else ""
         return f"[{agent}] {head[:200]}"
-
-
-_default = ModelClient()
-
-
-def complete(prompt: str, **kwargs) -> str:
-    return _default.complete(prompt, **kwargs)

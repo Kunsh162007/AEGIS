@@ -14,17 +14,13 @@ the agnostic path — the system is always runnable.
 """
 from __future__ import annotations
 
+import importlib.util
 from typing import Any, Optional, TypedDict
 
 
 def frameworks_available() -> bool:
     """True iff langgraph is importable (the orchestrator checks this before use)."""
-    try:
-        import langgraph  # noqa: F401
-        from langgraph.graph import StateGraph  # noqa: F401
-        return True
-    except Exception:
-        return False
+    return importlib.util.find_spec("langgraph") is not None
 
 
 class VerificationState(TypedDict, total=False):

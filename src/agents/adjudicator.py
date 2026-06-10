@@ -5,7 +5,7 @@ Only verified claims count — rejected claims carry zero weight.
 from __future__ import annotations
 
 from ..band.interface import CaseRoom
-from ..data.schema import Case, CaseResult, Decision, Evidence, Verdict
+from ..data.schema import Case, CaseResult, Evidence, Verdict
 from ..policy.autonomy import AutonomyPolicy
 from .base import BaseAgent
 

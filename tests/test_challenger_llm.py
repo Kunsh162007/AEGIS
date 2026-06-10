@@ -58,6 +58,14 @@ def test_mock_mode_adds_no_llm_rebuttal():
     assert not any(r["source"] == "llm:reasoning" for r in res["rebuttals"])
 
 
+def test_mock_fallback_text_is_not_treated_as_an_explanation():
+    # auto-mode-without-keys degrades to mock narration ("[challenger] ...");
+    # it must NOT be accepted as a real innocent explanation.
+    ch = ChallengerAgent(FakeReasoner("[challenger] Transaction notes: wire credit"))
+    res = ch.challenge(_case(), [], _room())
+    assert not any(r["source"] == "llm:reasoning" for r in res["rebuttals"])
+
+
 def test_llm_clears_profile_flag_but_not_structural_evidence():
     ch = ChallengerAgent(FakeReasoner("Salary income from the customer's employer."))
 

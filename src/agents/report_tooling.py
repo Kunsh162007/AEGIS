@@ -1,6 +1,5 @@
 """Report / Tooling agent (§5 #9) — drafts the evidence-cited case report / SAR
-for escalated cases, and can write an ad-hoc detection query on request.
-(Codeband in production; framework-agnostic here.)
+for escalated cases. (Codeband in production; framework-agnostic here.)
 """
 from __future__ import annotations
 
@@ -33,7 +32,3 @@ class ReportAgent(BaseAgent):
         report = "\n".join(lines)
         result.report = report
         return report
-
-    def write_query(self, request: str) -> str:
-        return self.narrate(f"Write a detection query for: {request}",
-                            system="You write read-only analytics queries.")

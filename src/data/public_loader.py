@@ -166,8 +166,10 @@ def load_public(path: str | None = None, kind: str | None = None,
             "No PUBLIC_DATASET_PATH set. Download PaySim/IBM-AML/Elliptic from "
             "Kaggle and point .env at the CSV, or use synthetic.labeled_dataset().")
 
-    # Read enough rows that focus accounts have several transactions each.
-    df = pd.read_csv(path).head(max(limit * 50, 5_000))
+    # Read enough rows that focus accounts have several transactions each, but
+    # bound it with `nrows` so a multi-hundred-MB full dataset never loads
+    # entirely into memory (the bundled sample is small, so this reads all of it).
+    df = pd.read_csv(path, nrows=max(limit * 50, 20_000))
     edges = _edges_from_df(df, kind)
 
     inbound: dict[str, list[dict]] = defaultdict(list)

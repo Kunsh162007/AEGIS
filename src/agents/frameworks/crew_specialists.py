@@ -13,15 +13,12 @@ orchestrator only takes this path when USE_FRAMEWORKS=true.
 """
 from __future__ import annotations
 
+import importlib.util
 from typing import Any
 
 
 def frameworks_available() -> bool:
-    try:
-        import crewai  # noqa: F401
-        return True
-    except Exception:
-        return False
+    return importlib.util.find_spec("crewai") is not None
 
 
 _ROLE_GOALS = {

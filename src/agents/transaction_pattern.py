@@ -3,8 +3,6 @@ structuring near the CTR threshold, velocity bursts, round-number flags.
 """
 from __future__ import annotations
 
-from collections import defaultdict
-
 from ..band.interface import CaseRoom
 from ..data.schema import Case, Evidence, Verdict
 from .base import BaseAgent
