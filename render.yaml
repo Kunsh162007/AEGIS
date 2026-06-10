@@ -17,6 +17,11 @@ services:
         value: mock
       - key: MODEL_CACHE
         value: "true"
+      # Run the verification trio as a real LangGraph StateGraph (offline, no
+      # keys). The specialist CrewAI path degrades to direct execution since
+      # crewai isn't installed in the image.
+      - key: USE_FRAMEWORKS
+        value: "true"
       - key: PYTHONUNBUFFERED
         value: "1"
       # Render injects $PORT automatically — do not set it here.

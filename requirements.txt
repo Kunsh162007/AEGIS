@@ -18,14 +18,12 @@ openai>=1.30            # used as a generic OpenAI-compatible client
 # lightgbm>=4.3
 
 # ── Agent frameworks (the "two frameworks on purpose" scoring story) ─────
-# The core pipeline runs WITHOUT these (USE_FRAMEWORKS=false). Install to enable
-# the production path: the verification trio then runs as a REAL LangGraph
-# StateGraph and the specialists as a CrewAI crew (orchestrator branches on the
-# flag; each adapter degrades gracefully if its lib is missing).
-#   pip install langgraph        # verification graph — runs offline, no keys
-#   pip install crewai           # specialist crew (heavier; may need a model key)
-# langgraph>=0.2
-# crewai>=0.30
+# With USE_FRAMEWORKS=true the verification trio runs as a REAL LangGraph
+# StateGraph (runs offline, no keys) and the specialists as a CrewAI crew. The
+# orchestrator branches on the flag and each adapter degrades gracefully if its
+# lib is missing, so the core still runs without them.
+langgraph>=0.2            # verification graph — installed so the deployed demo shows it
+# crewai>=0.30            # specialist crew (heavier; skipped by default — degrades to direct)
 
 # ── Knowledge base (optional; falls back to built-in keyword store) ──────
 # chromadb>=0.5
