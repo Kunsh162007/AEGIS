@@ -29,5 +29,12 @@ langgraph>=0.2            # verification graph — installed so the deployed dem
 # chromadb>=0.5
 # sentence-transformers>=2.7
 
-# ── Band SDK (added from the official Band SDK docs — package name TBD) ─
-# band-sdk>=0.0            # <-- replace with the real package once docs are in hand
+# ── Band SDK (https://band.ai — real platform integration) ───────────────
+# Needed only to run the Band remote agent (python -m src.band.band_agent);
+# the core system runs without it. PyPI's band-sdk lags the `band` module
+# rename, so install from git (clone first — pip's direct git install trips on
+# a private .claude submodule):
+#   git clone --depth 1 https://github.com/thenvoi/thenvoi-sdk-python.git %TEMP%\band-sdk-src
+#   pip install "%TEMP%\band-sdk-src[langgraph]"
+# langchain-openai (pulled in by the extra) powers the agent's brain via the
+# OpenAI-compatible AI/ML API.

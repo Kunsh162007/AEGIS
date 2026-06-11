@@ -81,10 +81,16 @@ Variable*), then redeploy. Never commit keys to git.
 |------|---------------------------|----------------------|
 | Frontier reasoning for Challenger/Verifier/Adjudicator | `MODEL_PROVIDER=aimlapi`, `AIMLAPI_KEY=…` | https://aimlapi.com (free starter credit) |
 | Open-source models for the specialists | `MODEL_PROVIDER=featherless`, `FEATHERLESS_KEY=…` | https://featherless.ai |
-| Real Band coordination (after the SDK is wired) | `BAND_API_KEY=…`, `BAND_BASE_URL=…`, `BAND_TENANT_ID=…` | Official Band SDK docs |
+| AEGIS as a live agent on the Band platform | `BAND_AGENT_ID=…`, `BAND_AGENT_KEY=…` (run `python -m src.band.band_agent` — see README "AEGIS on Band") | https://app.band.ai → create a remote agent |
 | Public-benchmark headline accuracy (§9) | `PUBLIC_DATASET_PATH=…`, `PUBLIC_DATASET_KIND=paysim\|ibm_aml\|elliptic` | Kaggle (download a CSV; see README §9) |
 
 Notes:
+- **The Band agent is a separate long-running process** (it holds a WebSocket to
+  Band Cloud), not an endpoint of the web service. For the demo, run it on your
+  laptop (`python -m src.band.band_agent`) — it works from anywhere with internet;
+  the deployed website doesn't need it. To run it 24/7 instead, add a Render
+  **Background Worker** with the same repo and start command
+  `python -m src.band.band_agent`.
 - `MODEL_CACHE=true` (already set) caches LLM responses on disk so re-running a
   demo costs nothing. On Render's ephemeral free disk the cache resets on
   redeploy — fine for a demo; attach a Render Disk if you want it to persist.

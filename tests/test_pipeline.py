@@ -46,6 +46,32 @@ def test_verifier_rejects_uncited_claim():
     assert rejected and bad.verified is False
 
 
+def test_verifier_rejects_hallucinated_references():
+    # A citation pointing at records that don't exist in the case must be
+    # rejected — including digit-free fabricated ids (review item #7).
+    from src.agents.verifier import VerifierAgent
+    from src.band.interface import Credential
+    from src.data.schema import Evidence
+    case = case_structuring()
+    room = LocalMesh().open_room(case.case_id, Credential(officer_id="o", scopes={"*"}))
+    fake_wordy = Evidence(agent="x", claim="cluster found", source="txn:[the-big-transfer]",
+                          weight=0.9)
+    fake_numeric = Evidence(agent="x", claim="hub found", source="graph:hub(ACCT-99999)",
+                            weight=0.9)
+    real_id = case.transactions[0].txn_id
+    mixed = Evidence(agent="x", claim="burst found", source=f"txn:[{real_id},tx-fake-1]",
+                     weight=0.9)
+    genuine = Evidence(agent="x", claim="inbound spike", source=f"txn:[{real_id}]",
+                       weight=0.9)
+    _, rejected = VerifierAgent().verify(
+        case, [fake_wordy, fake_numeric, mixed, genuine], {"rebuttals": []}, room)
+    assert fake_wordy.verified is False
+    assert fake_numeric.verified is False
+    assert mixed.verified is False
+    assert genuine.verified is True
+    assert len(rejected) == 3
+
+
 def test_consortium_strengthens_via_peer():
     peer = LocalMesh(tenant_id="bank-beta")
     peer.publish_pattern({"typology": "fan-in-then-burst", "txn_window_h": 72,

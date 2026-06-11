@@ -11,6 +11,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +25,13 @@ from ..eval.harness import evaluate
 from ..orchestrator import Orchestrator
 
 app = FastAPI(title="AEGIS", version="0.2.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+# In production the dashboard is served from this same origin (mount below), so
+# no cross-origin access is needed at all. CORS exists only for local dev where
+# the Next.js dev server runs on :3000; extend via CORS_ORIGINS if you host the
+# UI elsewhere.
+_cors_origins = [o.strip() for o in os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_methods=["*"],
                    allow_headers=["*"])
 
 

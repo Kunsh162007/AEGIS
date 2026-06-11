@@ -134,7 +134,7 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 | Path | What |
 |------|------|
 | `src/agents/` | the 10-agent roster (specialists + verification trio + consortium + report) |
-| `src/band/` | Band transport: abstract `interface.py` + runnable `stub.py` (swap in the real SDK) |
+| `src/band/` | Band layer: abstract `interface.py` + in-process `stub.py` + **`band_agent.py` (live agent on the real Band platform)** |
 | `src/models/` | unified AI/ML API + Featherless + Ollama + mock client, with caching |
 | `src/graph/` | NetworkX entity graph (mule hubs, cycles) |
 | `src/knowledge/` | typology / adverse-media retrieval + reviewed precedent |
@@ -145,10 +145,41 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 | `src/api/` | FastAPI backend + SSE live stream |
 | `dashboard/` | Next.js live investigation UI |
 
+## 🎸 AEGIS on Band (live platform integration)
+
+AEGIS runs as a **remote agent on the Band platform** ([band.ai](https://band.ai)) —
+a compliance officer in a Band chatroom can @mention AEGIS and trigger a full
+investigation, with the governed result posted back into the shared room:
+
+```text
+@AEGIS investigate the mule fixture with the consortium check
+```
+
+Setup (~5 min):
+
+1. Install the SDK (PyPI lags the module rename, so install from git):
+   ```powershell
+   git clone --depth 1 https://github.com/thenvoi/thenvoi-sdk-python.git $env:TEMP\band-sdk-src
+   pip install "$env:TEMP\band-sdk-src[langgraph]"
+   ```
+2. Sign in at [app.band.ai](https://app.band.ai) → create a **remote agent**
+   named `AEGIS` → copy its **agent UUID** and **API key** into `.env` as
+   `BAND_AGENT_ID` / `BAND_AGENT_KEY`.
+3. Set `AIMLAPI_KEY` too — the Band agent's conversational brain runs on the
+   AI/ML API reasoning tier (falls back to local Ollama without it).
+4. Run it and leave it running, then chat with it in any Band room:
+   ```powershell
+   python -m src.band.band_agent
+   ```
+
+The internal pipeline still runs on the in-process mesh (`stub.py`) so the demo
+website works with zero keys; the Band agent is the door between Band rooms and
+that pipeline.
+
 ## ⚠️ Status & honesty notes
 
-- **Band** is behind a local stub until the official SDK is wired. Agent
-  logic is decoupled so this is a clean swap, not a rewrite.
+- **Band**: the live platform integration is `src/band/band_agent.py` (above);
+  the internal agent-to-agent mesh remains the local, auditable `stub.py`.
 - **LangGraph** powers the verification trio as a real `StateGraph` when
   `USE_FRAMEWORKS=true` (runs offline, no keys); **CrewAI** wraps the specialist
   crew (heavier, may need a key). The core also runs framework-agnostic so it's

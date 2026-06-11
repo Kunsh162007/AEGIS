@@ -56,8 +56,10 @@ class Settings:
     })
 
     band: dict = field(default_factory=lambda: {
-        "api_key": os.getenv("BAND_API_KEY", ""),
-        "base_url": os.getenv("BAND_BASE_URL", ""),
+        # Each remote agent created at https://app.band.ai gets its own UUID +
+        # API key — used by src/band/band_agent.py (the real Band integration).
+        "agent_id": os.getenv("BAND_AGENT_ID", ""),
+        "agent_key": os.getenv("BAND_AGENT_KEY", ""),
         "tenant_id": os.getenv("BAND_TENANT_ID", "bank-alpha"),
     })
 

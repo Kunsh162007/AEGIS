@@ -27,20 +27,19 @@ class VerifierAgent(BaseAgent):
         # Rule 1: no source, or not a recognised evidence prefix -> not cited.
         if not src or not src.startswith(_VALID_PREFIX):
             return False
-        # Rule 1b: if the source cites concrete record ids (in [] or ()), at least
-        # one must actually exist in the case — catches hallucinated references.
-        # Match the WHOLE comma-separated reference (account ids may contain
-        # hyphens etc., e.g. "010-8000EBD0"); don't split inside an id.
+        # Rule 1b: every record id cited in [] or () must actually exist in the
+        # case — catches hallucinated references. All legitimate sources only
+        # ever bracket txn ids or account ids (see the specialist agents), so a
+        # single unknown token rejects the claim. Match the WHOLE comma-separated
+        # reference (ids may contain hyphens, e.g. "010-8000EBD0"); don't split
+        # inside an id.
         known = {t.txn_id for t in case.transactions} | {p.account for p in case.parties}
         bracketed = re.findall(r"[\[(]([^\])]+)[\])]", src)
-        record_like: set[str] = set()
         for chunk in bracketed:
             for part in chunk.split(","):
                 part = part.strip()
-                if part and any(ch.isdigit() for ch in part):  # looks like an id, not a word
-                    record_like.add(part)
-        if record_like and not (record_like & known):
-            return False
+                if part and part not in known:
+                    return False
         return True
 
     def verify(self, case: Case, evidence: list[Evidence], challenge: dict,
