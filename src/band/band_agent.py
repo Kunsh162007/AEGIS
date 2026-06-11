@@ -76,6 +76,13 @@ def _run_investigation(fixture: str, consortium: bool) -> str:
 
 def build_adapter():
     """LangGraph adapter whose brain is the AEGIS reasoning tier (AI/ML API)."""
+    import os
+
+    # AI/ML API streams can stall >120s mid-response (free-tier throttling),
+    # which trips langchain-openai's default chunk timeout and fails the whole
+    # Band message. Give it 300s unless the user tuned it themselves.
+    os.environ.setdefault("LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S", "300")
+
     from langchain_core.tools import tool
     from langchain_openai import ChatOpenAI
     from langgraph.checkpoint.memory import InMemorySaver
