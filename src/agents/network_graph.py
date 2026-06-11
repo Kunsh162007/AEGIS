@@ -35,12 +35,15 @@ class NetworkGraphAgent(BaseAgent):
                 f"{' → '.join(cycles[0])}) — round-tripping / layering.",
                 source="graph:cycles", weight=0.75))
 
+        # Being linked to several entities is true of any ordinary account (a
+        # household pays many merchants) — weak context only, never enough to
+        # cross the escalation floor without a hub/cycle alongside it.
         connected = eg.connected_entities(case.focus_account)
         if len(connected) >= 4:
             ev.append(self._evidence(
                 f"Focus account is linked to {len(connected)} other entities in one "
                 f"connected component — broad network exposure.",
-                source=f"graph:component({case.focus_account})", weight=0.4))
+                source=f"graph:component({case.focus_account})", weight=0.25))
 
         if not ev:
             ev.append(self._evidence(

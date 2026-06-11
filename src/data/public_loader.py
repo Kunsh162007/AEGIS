@@ -116,7 +116,10 @@ def _edges_from_df(df, kind: str) -> list[dict]:
 def _derive_alert_type(account: str, ins: list[dict], outs: list[dict]) -> str:
     """Pick the alert type from transaction STRUCTURE (never the label) — this is
     what a real upstream alerting rule would route on."""
-    feeders = {e["src"] for e in ins if e["src"] != account}
+    # Card inflows are retail receipts (a merchant taking payments), never mule
+    # gather legs — only transfer/cash/wire inflows count toward fan-in.
+    gather = [e for e in ins if e["channel"] != "card"]
+    feeders = {e["src"] for e in gather if e["src"] != account}
     near_cash = [e for e in ins
                  if e["channel"] == "cash" and 0.85 * _CTR_THRESHOLD <= e["amount"] < _CTR_THRESHOLD]
     # A fan-in concentration is a mule/gather signal whether or not the onward
@@ -125,7 +128,11 @@ def _derive_alert_type(account: str, ins: list[dict], outs: list[dict]) -> str:
         return "mule_network"
     if len(near_cash) >= 3:
         return "structuring"
-    if ins and outs:               # in-and-out → possible pass-through
+    # In-and-out is only a pass-through signal when most of what came in went
+    # straight out again — a household spending part of its salary is not.
+    in_amt = sum(e["amount"] for e in gather)
+    out_amt = sum(e["amount"] for e in outs)
+    if gather and outs and in_amt > 0 and out_amt >= 0.6 * in_amt:
         return "mule_network"
     return "profile_anomaly"
 

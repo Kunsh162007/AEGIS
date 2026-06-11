@@ -29,9 +29,14 @@ class ExternalIntelAgent(BaseAgent):
         ev: list[Evidence] = []
         for h in hits:
             benign = h["id"].startswith("benign/")
+            # A typology description matching the ALERT LABEL is corroborative
+            # context, not proof — the alert routed here in the first place, so
+            # a decisive weight would let the label prove itself. It must never
+            # cross the escalation floor without independent structural
+            # evidence (hub / structuring / pass-through) alongside it.
             ev.append(self._evidence(
                 f"Knowledge base match: {h['text'][:160]}",
-                source=f"kb:{h['id']}", weight=0.3 if benign else 0.55,
+                source=f"kb:{h['id']}", weight=0.3 if benign else 0.35,
                 supports=Verdict.BENIGN if benign else Verdict.SUSPICIOUS))
         # No typology/adverse-media match is itself (weak) exculpatory signal —
         # and, crucially, avoids fabricating a "match" the retriever didn't find.

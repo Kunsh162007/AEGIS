@@ -28,7 +28,8 @@ import io
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from .public_loader import _MAX_TXNS_PER_CASE, _PAYSIM_CHANNEL, _derive_alert_type
+from .public_loader import (_CTR_THRESHOLD, _MAX_TXNS_PER_CASE, _PAYSIM_CHANNEL,
+                            _derive_alert_type)
 from .schema import Case, Party, Transaction
 
 _SRC_COLS = ("src", "from", "from_account", "origin", "nameorig", "sender", "source",
@@ -234,10 +235,28 @@ def cases_from_upload(data: bytes, filename: str = "upload.csv",
             raise ValueError(f"Account '{focus}' does not appear in the uploaded data.")
         selected = [focus]
     else:
-        selected = sorted(
-            accounts,
-            key=lambda a: len(inbound.get(a, [])) + len(outbound.get(a, [])),
-            reverse=True)[:max(1, min(limit, 20))]
+        # First-line alerting: rank accounts by structural risk priors (mule
+        # fan-in, near-threshold cash, pass-through), NOT raw activity — a
+        # grocery store taking hundreds of card payments is the busiest account
+        # in any ledger but the least interesting one. Activity only breaks
+        # ties (and carries the ranking when nothing scores at all).
+        def _risk_prior(a: str) -> float:
+            ins, outs = inbound.get(a, []), outbound.get(a, [])
+            gather = [e for e in ins if e["channel"] != "card"]
+            feeders = {e["src"] for e in gather if e["src"] != a}
+            near_cash = sum(1 for e in ins if e["channel"] == "cash"
+                            and 0.85 * _CTR_THRESHOLD <= e["amount"] < _CTR_THRESHOLD)
+            in_amt = sum(e["amount"] for e in gather)
+            out_amt = sum(e["amount"] for e in outs)
+            passthrough = 3 if (gather and outs and in_amt > 1000
+                                and out_amt >= 0.6 * in_amt) else 0
+            return max(0, len(feeders) - 2) * 2 + near_cash * 2 + passthrough
+
+        def _activity(a: str) -> int:
+            return len(inbound.get(a, [])) + len(outbound.get(a, []))
+
+        selected = sorted(accounts, key=lambda a: (_risk_prior(a), _activity(a)),
+                          reverse=True)[:max(1, min(limit, 20))]
 
     return [_build_case(a, inbound.get(a, []), outbound.get(a, [])) for a in selected]
 
