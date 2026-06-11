@@ -13,7 +13,7 @@ from pathlib import Path
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
@@ -112,6 +112,48 @@ async def run_eval_public(limit: int = 200) -> dict:
         return {"error": "no bundled public benchmark sample available"}
     cases = await asyncio.to_thread(load_public, path, "generic", limit)
     return await asyncio.to_thread(evaluate, cases, "public:ibm-aml-sample")
+
+
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB covers sizeable ledger exports
+
+
+@app.post("/api/analyze")
+async def analyze_upload(file: UploadFile = File(...), focus: str = "",
+                         limit: int = 5) -> dict:
+    """Bring-your-own-data: upload a transaction file (CSV / Excel / JSON /
+    text-based PDF) and AEGIS investigates the most active accounts in it (or
+    the one named in `focus`). The file is parsed in memory only — never
+    stored. No labels are involved; this is real inference on the caller's
+    data. Accounts are investigated in parallel."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..data.user_upload import cases_from_upload
+
+    data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large (max 25 MB). Export a smaller slice.")
+    try:
+        cases = await asyncio.to_thread(
+            cases_from_upload, data, file.filename or "upload.csv", focus or None, limit)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    def _one(case) -> dict:
+        result = Orchestrator().investigate(case)
+        return {
+            "account": case.focus_account,
+            "alert_type": case.alert_type,
+            "transactions": len(case.transactions),
+            "result": json.loads(result.model_dump_json()),
+        }
+
+    def _run() -> list[dict]:
+        with ThreadPoolExecutor(max_workers=min(4, len(cases))) as pool:
+            return list(pool.map(_one, cases))
+
+    results = await asyncio.to_thread(_run)
+    return {"filename": file.filename, "accounts_analyzed": len(results),
+            "results": results}
 
 
 @app.get("/api/health")
