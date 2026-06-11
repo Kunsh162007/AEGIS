@@ -95,5 +95,6 @@ button.ghost { background: transparent; }
 .chip { font-size: 13px; padding: 6px 14px; border-radius: 999px; background: var(--panel);
   border: 1px solid var(--border); }
 .chip.red { border-color: var(--red); color: var(--red); }
+.chip.amber { border-color: var(--amber); color: var(--amber); }
 .chip.green { border-color: var(--green); color: var(--green); }
 .footer { color: var(--muted); font-size: 12px; margin-top: 26px; text-align: center; }

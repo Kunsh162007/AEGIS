@@ -195,8 +195,16 @@ def parse_csv(data: bytes) -> list[dict]:
     return parse_upload(data, "upload.csv")
 
 
-def _build_case(account: str, ins: list[dict], outs: list[dict]) -> Case:
+def _build_case(account: str, ins: list[dict], outs: list[dict],
+                cross: list[dict] | None = None) -> Case:
     rel = sorted(ins + outs, key=lambda e: e["step"])[:_MAX_TXNS_PER_CASE]
+    # Add transactions BETWEEN the case's counterparties (2-hop edges): a
+    # layering ring A->B->C->A is invisible from any single account's
+    # statements alone — the graph agent can only detect the cycle if the
+    # B->C leg is in view.
+    party_set = {account} | {e["src"] for e in rel} | {e["dst"] for e in rel}
+    rel += [e for e in (cross or [])
+            if e["src"] in party_set and e["dst"] in party_set][:_MAX_TXNS_PER_CASE]
     t0 = datetime(2026, 1, 1)
     txns = [Transaction(
         txn_id=f"upload-{account}-{j}",
@@ -204,7 +212,7 @@ def _build_case(account: str, ins: list[dict], outs: list[dict]) -> Case:
         src_account=e["src"], dst_account=e["dst"], amount=e["amount"],
         channel=e["channel"], note=e["channel"]) for j, e in enumerate(rel)]
 
-    accounts = {account} | {e["src"] for e in rel} | {e["dst"] for e in rel}
+    accounts = party_set | {e["src"] for e in rel} | {e["dst"] for e in rel}
     in_amt = sum(e["amount"] for e in ins)
     parties = [Party(account=a, name=f"acct-{a}",
                      expected_monthly_volume=round(max(in_amt, 1.0)) if a == account else 0.0)
@@ -258,7 +266,9 @@ def cases_from_upload(data: bytes, filename: str = "upload.csv",
         selected = sorted(accounts, key=lambda a: (_risk_prior(a), _activity(a)),
                           reverse=True)[:max(1, min(limit, 20))]
 
-    return [_build_case(a, inbound.get(a, []), outbound.get(a, [])) for a in selected]
+    return [_build_case(a, inbound.get(a, []), outbound.get(a, []),
+                        cross=[e for e in edges if a not in (e["src"], e["dst"])])
+            for a in selected]
 
 
 def cases_from_csv(data: bytes, focus: str | None = None, limit: int = 5) -> list[Case]:

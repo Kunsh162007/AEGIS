@@ -127,7 +127,8 @@ export default function Home() {
   const verified = result?.evidence.filter((e) => e.verified) ?? [];
   const rejected = result?.evidence.filter((e) => e.verified === false) ?? [];
   const suspiciousN = uploadR?.results.filter((r) => r.result.verdict === "suspicious").length ?? 0;
-  const clearedN = uploadR?.results.filter((r) => r.result.verdict !== "suspicious").length ?? 0;
+  const reviewN = uploadR?.results.filter((r) => r.result.verdict === "uncertain").length ?? 0;
+  const clearedN = uploadR?.results.filter((r) => r.result.verdict === "benign").length ?? 0;
 
   return (
     <div className="wrap">
@@ -200,6 +201,7 @@ export default function Home() {
               <div className="summary">
                 <div className="chip">{uploadR.filename}</div>
                 <div className="chip red">{suspiciousN} suspicious</div>
+                {reviewN > 0 && <div className="chip amber">{reviewN} needs human review</div>}
                 <div className="chip green">{clearedN} cleared</div>
               </div>
               {uploadR.results.map((r, i) => {
