@@ -59,10 +59,30 @@ class ChallengerAgent(BaseAgent):
         # the rebuttal to be grounded, so the LLM can't fabricate a clearance.
         rebuttals.extend(self._llm_innocent_explanations(case, evidence))
 
+        # Ground the narration in the ACTUAL case: flows + evidence. Without
+        # these facts a live model free-associates generic (non-AML) content.
+        flows = "; ".join(
+            f"{t.src_account}->{t.dst_account} ${t.amount:,.0f} ({t.channel})"
+            for t in case.transactions[:8])
+        claims = "; ".join(e.claim for e in evidence
+                           if e.supports == Verdict.SUSPICIOUS)[:600]
         argument = self.narrate(
-            f"Argue the innocent explanation for case {case.case_id}. "
-            f"Rebuttals: {[r['explanation'] for r in rebuttals]}",
-            system="You are a red-team analyst trying to clear the customer.")
+            f"Case {case.case_id} — alert type: {case.alert_type}; focus "
+            f"account: {case.focus_account}.\n"
+            f"Money flows: {flows}\n"
+            f"Evidence against the customer: {claims or 'none'}\n"
+            f"Grounded innocent leads already found: "
+            f"{[r['explanation'] for r in rebuttals] or 'none'}\n\n"
+            "In UNDER 120 words, argue the strongest innocent explanation for "
+            "this specific money movement (salary, property sale, business "
+            "revenue, cash-intensive trade, family support…), addressing the "
+            "evidence above directly. Talk only about these transactions — "
+            "this is anti-money-laundering, not cybersecurity. If no innocent "
+            "reading is plausible, say so plainly in one sentence.",
+            system="You are the red-team analyst on an AML investigation team, "
+                   "trying to clear the customer with concrete, case-specific "
+                   "arguments.",
+            max_tokens=220)
 
         room.post(self.name, "challenge", {"argument": argument, "rebuttals": rebuttals})
         return {"argument": argument, "rebuttals": rebuttals}

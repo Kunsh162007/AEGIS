@@ -16,8 +16,9 @@ class BaseAgent:
     def __init__(self, model: ModelClient | None = None):
         self.model = model or ModelClient()
 
-    def narrate(self, prompt: str, system: str = "") -> str:
-        return self.model.complete(prompt, tier=self.tier, agent=self.name, system=system)
+    def narrate(self, prompt: str, system: str = "", max_tokens: int = 512) -> str:
+        return self.model.complete(prompt, tier=self.tier, agent=self.name, system=system,
+                                   max_tokens=max_tokens)
 
     def _evidence(self, claim: str, source: str, weight: float,
                   supports: Verdict = Verdict.SUSPICIOUS) -> Evidence:

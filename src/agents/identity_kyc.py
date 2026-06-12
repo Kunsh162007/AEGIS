@@ -24,7 +24,13 @@ class IdentityKycAgent(BaseAgent):
                           if t.dst_account == focus.account)
             expected = focus.expected_monthly_volume or 1.0
             ratio = inbound / expected
-            if ratio >= 2.0:
+            if inbound == 0:
+                ev.append(self._evidence(
+                    "No inbound activity to the focus account in this case — "
+                    "nothing to assess against the expected profile.",
+                    source=f"kyc:profile({focus.account})", weight=0.15,
+                    supports=Verdict.BENIGN))
+            elif ratio >= 2.0:
                 ev.append(self._evidence(
                     f"Inbound ${inbound:,.0f} is {ratio:.1f}x the account's expected "
                     f"monthly volume (${expected:,.0f}) — behaviour off profile.",

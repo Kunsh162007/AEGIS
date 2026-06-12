@@ -140,8 +140,9 @@ class ChatAnalystAgent(BaseAgent):
                 f"numbers, accounts or verdicts):\n{grounded}",
                 system="You are AEGIS's case analyst. Answer the question in "
                        "2-5 clear sentences using only the established facts "
-                       "provided. If the facts don't cover the question, say "
-                       "so and suggest what to analyze.")
+                       "provided. Keep every count and number exactly as "
+                       "stated in the facts. If the facts don't cover the "
+                       "question, say so and suggest what to analyze.")
             # The model client degrades to a mock echo on provider failure —
             # detect that marker and keep the deterministic answer instead.
             if prose and not prose.startswith(f"[{self.name}]"):

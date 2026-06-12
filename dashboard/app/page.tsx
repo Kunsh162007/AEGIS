@@ -447,7 +447,10 @@ export default function Home() {
                                   <tr className="hot" key={t.txn_id}>
                                     <td>{t.src}</td><td>{t.dst}</td>
                                     <td>${t.amount.toLocaleString()}</td><td>{t.channel}</td>
-                                    <td className="why">{r.flagged_txns![t.txn_id][0]}</td>
+                                    <td className="why">
+                                      {r.flagged_txns![t.txn_id][0]}
+                                      {r.flagged_txns![t.txn_id].length > 1 && ` (+${r.flagged_txns![t.txn_id].length - 1} more)`}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>

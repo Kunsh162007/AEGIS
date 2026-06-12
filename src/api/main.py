@@ -94,12 +94,20 @@ def _flagged_transactions(case, result) -> dict[str, list[str]]:
                     cited = True
         if cited or not e.source.startswith(("txn:", "graph:")):
             continue
-        # Account-level citation: flag the focus account's flows with that party.
+        # Account-level citation: flag the focus account's flows with that
+        # party — respecting the claim's direction so an outbound transfer is
+        # never explained by an "inbound velocity" reason.
+        semantics = e.source.split("(", 1)[0]
         for acct in re.findall(r"\(([^)]+)\)", e.source):
             for t in case.transactions:
-                if acct in (t.src_account, t.dst_account) and \
-                        case.focus_account in (t.src_account, t.dst_account):
-                    _mark(t.txn_id, reason)
+                if acct not in (t.src_account, t.dst_account) or \
+                        case.focus_account not in (t.src_account, t.dst_account):
+                    continue
+                if semantics.endswith("inbound") and t.dst_account != acct:
+                    continue
+                if semantics.endswith("outbound") and t.src_account != acct:
+                    continue
+                _mark(t.txn_id, reason)
     return flags
 
 
