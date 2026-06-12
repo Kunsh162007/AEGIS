@@ -129,10 +129,13 @@ with the repo (`src/data/benchmarks/ibm_sample.csv`), so the credible number
 works out-of-the-box — locally and on the deployed app (the **Benchmark** tab).
 No download, no keys.
 
-On this slice AEGIS catches **~93%** of laundering (vs ~90% baseline) while
-cutting false positives from **~31% → ~11%** (**~65% reduction**). Recall is
-shown next to the reduction — AEGIS is a triage layer, strongest on *structured*
-laundering. Provenance and method: [`src/data/benchmarks/README.md`](./src/data/benchmarks/README.md).
+On this slice (200 cases) AEGIS cuts false positives by **~77%** while holding
+the catch rate at the baseline's level (**~89% vs ~90%**). Recall is shown next
+to the reduction — AEGIS is a triage layer, strongest on *structured*
+laundering. The benchmark always runs the deterministic pipeline (the
+architecture is computation; LLMs only narrate), so the number is reproducible
+and identical with or without live model keys. Provenance and method:
+[`src/data/benchmarks/README.md`](./src/data/benchmarks/README.md).
 
 > **Why IBM AML, not PaySim?** PaySim's labelled "fraud" is balance-draining
 > theft with no laundering *structure* (its mule transfers and cash-outs aren't
