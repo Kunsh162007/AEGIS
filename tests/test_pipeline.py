@@ -85,3 +85,19 @@ def test_eval_shows_fp_reduction():
     # AEGIS should not have MORE false positives than the naive baseline.
     assert report["aegis"]["false_positives"] <= report["baseline"]["false_positives"]
     assert report["aegis"]["recall_catch_rate"] >= 0.5
+
+
+def test_eval_pins_deterministic_provider(monkeypatch):
+    """The benchmark must stay reproducible, fast and free: even with a live
+    provider configured, evaluate() never makes a model API call."""
+    from src.config import settings
+    from src.models.client import ModelClient
+
+    calls: list[int] = []
+    monkeypatch.setattr(settings, "provider", "aimlapi")
+    monkeypatch.setattr(ModelClient, "_openai_compatible",
+                        lambda self, *a, **k: calls.append(1) or "live text")
+
+    report = evaluate(labeled_dataset(n=6), "synthetic")
+    assert report["aegis"]["n"] == 6
+    assert not calls  # the pinned mock client never reached a live backend

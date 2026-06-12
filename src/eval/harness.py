@@ -40,7 +40,13 @@ def evaluate(cases: list[Case], dataset_name: str = "synthetic") -> dict:
     labels = [c.label for c in cases]
 
     baseline_preds = [baseline_verdict(c) for c in cases]
-    orch = Orchestrator()
+    # The benchmark pins the deterministic provider regardless of
+    # MODEL_PROVIDER: the score measures the verification ARCHITECTURE (stats /
+    # graph / retrieval / challenge / audit), which is computation, and pinning
+    # keeps the number reproducible — and a 200-case run fast and free — even
+    # when the deployed app investigates with live models.
+    from ..models.client import ModelClient
+    orch = Orchestrator(model=ModelClient(provider="mock"))
     aegis_preds = [orch.investigate(c).verdict for c in cases]
 
     base_m = _metrics(labels, baseline_preds)

@@ -49,8 +49,8 @@ DEFAULT_SCOPES = {"txn:read", "kyc:read", "kb:read"}
 class Orchestrator:
     def __init__(self, mesh: LocalMesh | None = None, policy: AutonomyPolicy | None = None,
                  kb: KnowledgeBase | None = None, officer_scopes: set[str] | None = None,
-                 use_frameworks: bool | None = None):
-        self.model = ModelClient()
+                 use_frameworks: bool | None = None, model: ModelClient | None = None):
+        self.model = model or ModelClient()
         self.mesh = mesh or get_mesh()
         self.kb = kb or KnowledgeBase()
         self.policy = policy or AutonomyPolicy()
