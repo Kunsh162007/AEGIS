@@ -6,7 +6,7 @@ import pytest
 
 from src.casework import Department
 from src.casework.priority import hours_saved
-from src.data.synthetic import case_salary_spike, case_structuring
+from fixtures import case_salary_spike, case_structuring
 
 
 def _dept() -> Department:

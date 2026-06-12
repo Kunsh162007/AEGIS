@@ -14,7 +14,7 @@ from src.casework.org import baselines_from_edges, normalize_profile
 from src.casework.patterns import looks_novel, signature
 from src.casework.store import CaseStore
 from src.data.schema import Case, Party, Transaction, Verdict
-from src.data.synthetic import case_structuring
+from fixtures import case_structuring
 
 
 def _room(case):

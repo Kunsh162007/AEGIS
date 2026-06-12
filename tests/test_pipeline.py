@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from src.band import LocalMesh
 from src.data.schema import Decision, Verdict
-from src.data.synthetic import (case_mule_network, case_property_sale,
+from fixtures import (case_mule_network, case_property_sale,
                                 case_salary_spike, case_structuring, labeled_dataset)
 from src.eval.harness import evaluate
 from src.orchestrator import Orchestrator

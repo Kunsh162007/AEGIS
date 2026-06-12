@@ -1,15 +1,15 @@
-"""Synthetic, labeled case generator — used ONLY by the test-suite and the
-offline eval sanity check. It is never user-facing: the product analyzes
-uploaded data (user_upload.py) and the headline accuracy comes from the public
-benchmark (public_loader.py). Ground-truth labels are attached for scoring;
-agents never read them. NO REAL PII, EVER — names are obviously fake.
+"""Test-only labeled case fixtures. Lives in tests/ on purpose: the product
+ships NO sample-data generation — it analyzes uploaded data (user_upload.py)
+and the headline accuracy comes from the public benchmark (public_loader.py).
+Ground-truth labels are attached for scoring; agents never read them.
+NO REAL PII, EVER — names are obviously fake.
 """
 from __future__ import annotations
 
 import random
 from datetime import datetime, timedelta
 
-from .schema import Case, Party, Transaction, Verdict
+from src.data.schema import Case, Party, Transaction, Verdict
 
 FAKE_NAMES = [
     "Ava Stone", "Ben Carter", "Cara Diaz", "Dan Ng", "Ella Roy", "Finn Park",

@@ -1,1 +1,1 @@
-"""Synthetic data, public-dataset loading, and the shared case schema."""
+"""Public-dataset loading, user uploads, and the shared case schema."""

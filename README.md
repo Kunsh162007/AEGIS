@@ -53,12 +53,13 @@ pip install -r requirements.txt          # or the minimal set: pydantic python-d
 copy .env.example .env                    # MODEL_PROVIDER=mock works with no keys
 
 # 1) Investigate a real transaction file end-to-end (watch the agents work):
-python -m src.main examples\sample_transactions.csv
+python -m src.main examples\sample_transactions.csv   # small starter sample
+python -m src.main examples\regional_bank_week.csv    # a week of activity, 2 planted schemes + a borderline
 python -m src.main your_ledger.xlsx --focus ACC1042   # one named account
 python -m src.main export.json --limit 3              # top-3 risk-triaged accounts
 
 # 2) The accuracy number (baseline vs AEGIS, externally-labelled public data):
-python -m src.eval.harness --public --limit 200       # bundled IBM AML slice / PUBLIC_DATASET_PATH
+python -m src.eval.harness --limit 200                # bundled IBM AML slice / PUBLIC_DATASET_PATH
 
 # 3) The tests:
 python -m pytest tests/ -q
@@ -241,6 +242,38 @@ Setup (~5 min):
 The internal pipeline still runs on the in-process mesh (`stub.py`) so the
 website works with zero keys; the Band agent is the door between Band rooms and
 that pipeline.
+
+## 🚢 Deploy (Render, one Docker service)
+
+The repo deploys as a **single Docker image**: stage 1 builds the dashboard to
+static files, stage 2 runs FastAPI, which serves the UI and the API on one
+origin. On [Render](https://render.com): **New + → Web Service** → connect this
+repo → runtime **Docker** (auto-detected) → health check path `/api/health` →
+leave the Docker command empty. Environment variables:
+
+```env
+MODEL_PROVIDER=auto        # or `mock` for a zero-key deployment
+MODEL_CACHE=true
+USE_FRAMEWORKS=true
+PYTHONUNBUFFERED=1
+AIMLAPI_KEY=...            # reasoning tier (omit in mock mode)
+FEATHERLESS_KEY=...        # specialist tier (omit in mock mode)
+```
+
+Do **not** set `PORT` (Render injects it). Optional: `AEGIS_API_KEY` to lock
+state-changing endpoints, `AEGIS_DB_PATH` to relocate the casebook. Note the
+free tier's disk is ephemeral — the casebook resets on redeploy/sleep; attach
+a persistent disk for durable state.
+
+## 📁 Sample data (`examples/`)
+
+Static files only — the repo ships **no sample-data generation code**:
+
+- `sample_transactions.csv` — small starter: a mule ring, cash structuring, benign accounts.
+- `test_dataset.csv` / `.xlsx` — ~190 transactions hiding a mule, structuring and a layering cycle among ordinary household activity.
+- `regional_bank_week.csv` — 112 transactions: a fan-in mule (`COLLECT-7`), slow-burn structuring (`DEPOT-CASH-9`), a payroll population that auto-clears — and `fatima`, a deliberate borderline AEGIS *escalates rather than guesses*, so you can demo the human gate and watch the learning loop move when you dismiss her.
+
+Full project documentation: [`PROPOSAL.md`](./PROPOSAL.md).
 
 ## ⚠️ Status & honesty notes
 

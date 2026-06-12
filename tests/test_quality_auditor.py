@@ -6,7 +6,7 @@ from src.agents.quality_auditor import QualityAuditorAgent
 from src.band import LocalMesh
 from src.band.interface import Credential
 from src.data.schema import CaseResult, Decision, Evidence, Verdict
-from src.data.synthetic import case_structuring
+from fixtures import case_structuring
 
 
 def _room(case):

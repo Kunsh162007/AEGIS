@@ -5,9 +5,8 @@ Anti-Money-Laundering (AML)"** dataset (HI-Small variant), so the deployed app
 can show a credible accuracy number (§9) without a ~475 MB download.
 
 - **Source:** <https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml> (synthetic — **no real PII**, licence CC BY-SA 4.0).
-- **How it was built:** `build_ibm_sample.py` streams the first 1.5 M transactions of `HI-Small_Trans.csv`, picks the 150 most active **laundering** accounts (the structural centres a first-line rule would alert) plus 230 representative random **benign** accounts, and keeps every transaction touching them (≤25 per account). Labels are IBM's own `Is Laundering` flag — we only choose which accounts to include, never relabel. Output is a normalised money-flow CSV (`src,dst,amount,channel,isFraud`).
-- **Reproduce:** download `HI-Small_Trans.csv` from Kaggle, then
-  `python -m src.data.benchmarks.build_ibm_sample <path-to-HI-Small_Trans.csv>`.
+- **How it was built:** a one-off build script (removed from the repo after use) streamed the first 1.5 M transactions of `HI-Small_Trans.csv`, picked the 150 most active **laundering** accounts (the structural centres a first-line rule would alert) plus 230 representative random **benign** accounts, and kept every transaction touching them (≤25 per account). Labels are IBM's own `Is Laundering` flag — we only choose which accounts to include, never relabel. Output is a normalised money-flow CSV (`src,dst,amount,channel,isFraud`).
+- **Reproduce:** download `HI-Small_Trans.csv` from Kaggle and point `PUBLIC_DATASET_PATH` at it to score the full dataset with `python -m src.eval.harness`.
 
 ## Why IBM AML and not PaySim
 PaySim's labelled "fraud" is balance-draining theft, not laundering: a fraudulent
@@ -23,7 +22,5 @@ fan-in hubs).
 The eval balances **structurally-active laundering accounts** against a
 **representative random sample of benign accounts** and asks: can AEGIS confirm
 the laundering while not over-flagging ordinary accounts the way a size-only
-baseline does? On this slice AEGIS catches **~93 %** of laundering (vs ~90 % for
-the baseline) while cutting false positives from **~31 % to ~11 %** (~65 %
-reduction). Recall is reported alongside the reduction — AEGIS is a triage/
+baseline does? On this slice (200 cases) AEGIS cuts false positives by **~77 %** while holding the catch rate at the baseline's level (**~89 % vs ~90 %**). Recall is reported alongside the reduction — AEGIS is a triage/
 investigation layer over alerted accounts, strongest on *structured* laundering.

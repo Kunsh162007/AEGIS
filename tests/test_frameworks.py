@@ -8,7 +8,7 @@ import pytest
 from src.agents.frameworks import langgraph_verification
 from src.band import LocalMesh
 from src.data.schema import Verdict
-from src.data.synthetic import (case_mule_network, case_property_sale,
+from fixtures import (case_mule_network, case_property_sale,
                                 case_salary_spike, case_structuring)
 from src.orchestrator import Orchestrator
 

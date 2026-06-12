@@ -1,11 +1,10 @@
 """evaluate() — runs the baseline and full AEGIS over a labeled dataset and
 computes the headline numbers: false-positive reduction and true-positive catch
-rate (§9). The default is the PUBLIC benchmark (externally-authored labels —
-the credible number); `--synthetic` is a dev-only regression sanity check.
+rate (§9), on the PUBLIC benchmark (externally-authored labels — the credible
+number). CLI-only by design: the product UI shows nothing but the user's data.
 
-    python -m src.eval.harness                 # public benchmark (bundled IBM AML slice
-                                               # or PUBLIC_DATASET_PATH if set)
-    python -m src.eval.harness --synthetic     # dev-only offline sanity check
+    python -m src.eval.harness                 # bundled IBM AML slice, or
+                                               # PUBLIC_DATASET_PATH if set
 """
 from __future__ import annotations
 
@@ -13,7 +12,6 @@ import argparse
 import json
 
 from ..data.schema import Case, Verdict
-from ..data.synthetic import labeled_dataset
 from ..orchestrator import Orchestrator
 from .baseline import baseline_verdict
 
@@ -68,9 +66,7 @@ def evaluate(cases: list[Case], dataset_name: str = "synthetic") -> dict:
     }
 
 
-def _load(synthetic: bool, limit: int) -> tuple[list[Case], str]:
-    if synthetic:
-        return labeled_dataset(n=limit), "synthetic (dev sanity check — not the headline number)"
+def _load(limit: int) -> tuple[list[Case], str]:
     from ..config import settings
     from ..data.public_loader import load_public
     kind = settings.public_dataset_kind if settings.public_dataset_path else "ibm-aml-sample"
@@ -79,11 +75,9 @@ def _load(synthetic: bool, limit: int) -> tuple[list[Case], str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--synthetic", action="store_true",
-                    help="dev-only synthetic sanity check instead of the public benchmark")
     ap.add_argument("--limit", type=int, default=200)
     args = ap.parse_args()
-    cases, name = _load(args.synthetic, args.limit)
+    cases, name = _load(args.limit)
     print(json.dumps(evaluate(cases, dataset_name=name), indent=2))
 
 
