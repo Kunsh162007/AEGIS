@@ -1,14 +1,14 @@
 # Deploying AEGIS
 
 AEGIS deploys as **one Docker web service**: the FastAPI backend serves both the
-JSON/SSE API *and* the pre-built Next.js dashboard on a single public URL. No
-second service, no CORS, no proxy.
+JSON/streaming API *and* the pre-built Next.js dashboard on a single public URL.
+No second service, no CORS, no proxy.
 
 **It runs with zero API keys.** The default `MODEL_PROVIDER=mock` runs the entire
-agent pipeline deterministically — the live demo, the cited-evidence chain, the
-auto-clear/escalate decision, the cross-bank consortium match, and the
-baseline-vs-AEGIS accuracy panel all work with nothing to sign up for. API keys
-are *optional* upgrades (see the bottom).
+agent pipeline deterministically — uploaded-file investigations with the live
+audit stream, the cited-evidence chain, the auto-clear/escalate decision, and
+the public-benchmark accuracy panel all work with nothing to sign up for. API
+keys are *optional* upgrades (see the bottom).
 
 ---
 
@@ -18,7 +18,7 @@ are *optional* upgrades (see the bottom).
 |-------|-----------|-----|
 | A GitHub account | ✅ yes | Render deploys from a GitHub repo |
 | A Render account (free) | ✅ yes | https://render.com — sign in with GitHub |
-| Any API key | ❌ no | Mock mode is fully functional for the demo |
+| Any API key | ❌ no | Mock mode runs the full pipeline offline |
 | A public AML dataset (PaySim/IBM/Elliptic) | ⚪ optional | Only for the *public-benchmark* headline accuracy number (§9) |
 
 ---
@@ -45,14 +45,14 @@ git push -u origin main
 4. First build takes ~5–8 min (it builds the dashboard, then the Python image).
    Watch the logs; it's healthy once `/api/health` returns `200`.
 
-Your demo is live at **`https://aegis-<random>.onrender.com`** — open it and the
-dashboard loads directly. Pick a fixture → **Run investigation** → watch the
-agents work; tick **cross-bank consortium** for the headline match; **Run accuracy
-eval** for the metrics panel.
+The app is live at **`https://aegis-<random>.onrender.com`** — open it and the
+dashboard loads directly. Upload a transaction file (CSV / Excel / JSON / PDF) →
+**Run investigation** → watch the agents work on your data live; the
+**Benchmark** tab scores AEGIS on the public IBM AML dataset.
 
 > **Free-tier note:** Render free services sleep after ~15 min idle and cold-start
-> in ~50s on the next hit. For a live demo, open the URL a minute before you
-> present so it's warm. Upgrading to the $7/mo Starter plan removes the sleep —
+> in ~50s on the next hit. Before presenting, open the URL a minute early so it's
+> warm. Upgrading to the $7/mo Starter plan removes the sleep —
 > change `plan: free` → `plan: starter` in `render.yaml`.
 
 ### Redeploys
@@ -86,20 +86,19 @@ Variable*), then redeploy. Never commit keys to git.
 
 Notes:
 - **The Band agent is a separate long-running process** (it holds a WebSocket to
-  Band Cloud), not an endpoint of the web service. For the demo, run it on your
+  Band Cloud), not an endpoint of the web service. Run it on your
   laptop (`python -m src.band.band_agent`) — it works from anywhere with internet;
   the deployed website doesn't need it. To run it 24/7 instead, add a Render
   **Background Worker** with the same repo and start command
   `python -m src.band.band_agent`.
-- `MODEL_CACHE=true` (already set) caches LLM responses on disk so re-running a
-  demo costs nothing. On Render's ephemeral free disk the cache resets on
-  redeploy — fine for a demo; attach a Render Disk if you want it to persist.
-- **The public-benchmark number works on the deployed demo out of the box** — a
+- `MODEL_CACHE=true` (already set) caches LLM responses on disk so re-running the
+  same case costs nothing. On Render's ephemeral free disk the cache resets on
+  redeploy; attach a Render Disk if you want it to persist.
+- **The public-benchmark number works on the deployed app out of the box** — a
   small IBM-AML slice (`src/data/benchmarks/ibm_sample.csv`) ships in the image,
-  so the dashboard's "Run public benchmark (IBM AML)" button needs no dataset and
-  no keys. To score a *full* dataset, set `PUBLIC_DATASET_PATH` (the CSV must be
-  inside the image or on a mounted disk) and run `python -m src.eval.harness
-  --public`.
+  so the dashboard's Benchmark tab needs no dataset and no keys. To score a
+  *full* dataset, set `PUBLIC_DATASET_PATH` (the CSV must be inside the image or
+  on a mounted disk) and run `python -m src.eval.harness`.
 - Ollama (`MODEL_PROVIDER=ollama`) is a *local-only* fallback — it expects a
   server on `localhost:11434`, so it isn't used in the cloud deploy.
 

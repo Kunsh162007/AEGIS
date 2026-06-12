@@ -78,7 +78,7 @@ class Orchestrator:
         if on_event:
             self.mesh.subscribe(on_event)
 
-        credential = Credential(officer_id="officer:demo", scopes=set(self.scopes))
+        credential = Credential(officer_id="officer:aegis", scopes=set(self.scopes))
         room = self.mesh.open_room(case.case_id, credential)
 
         # 1) Intake recruits specialists for this alert type.

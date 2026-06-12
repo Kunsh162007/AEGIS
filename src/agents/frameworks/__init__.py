@@ -1,7 +1,7 @@
 """Framework adapters — the 'two frameworks on purpose' production path (§6, §19).
 
 The core orchestrator runs WITHOUT these (USE_FRAMEWORKS=false) so the system is
-always demoable. When USE_FRAMEWORKS=true:
+always runnable offline. When USE_FRAMEWORKS=true:
 
   * the four specialists run as a CrewAI crew      -> crew_specialists.py
   * the Challenger/Verifier/Consortium/Adjudicator run as a real LangGraph

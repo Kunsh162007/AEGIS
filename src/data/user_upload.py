@@ -218,7 +218,9 @@ def _build_case(account: str, ins: list[dict], outs: list[dict],
                      expected_monthly_volume=round(max(in_amt, 1.0)) if a == account else 0.0)
                for a in sorted(accounts)]
 
-    return Case(case_id=f"UPLOAD-{account}",
+    # "CASE-", not "UPLOAD-": the id is quoted in LLM prompts, and models read
+    # "UPLOAD" as being about file-upload abuse rather than money laundering.
+    return Case(case_id=f"CASE-{account}",
                 alert_type=_derive_alert_type(account, ins, outs),
                 focus_account=account, parties=parties, transactions=txns)
 

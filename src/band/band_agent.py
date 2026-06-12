@@ -2,14 +2,14 @@
 
 Band (https://band.ai) is the shared-room collaboration layer where agents and
 humans work together. This module connects AEGIS to it: a compliance officer in
-a Band chatroom can say
+a Band chatroom can paste transaction rows (CSV) and say
 
-    @AEGIS investigate the mule fixture with the consortium check
+    @AEGIS investigate these transactions
 
 and this agent runs the full 10-agent AEGIS pipeline (specialists -> challenger
--> verifier -> consortium -> adjudicator) and posts the governed result — the
-verdict, confidence, surviving cited evidence, and the audit-trail summary —
-back into the room where everyone can see it.
+-> verifier -> consortium -> adjudicator) on that real data and posts the
+governed result — the verdict, confidence, surviving cited evidence, and the
+audit-trail summary — back into the room where everyone can see it.
 
 Setup (see README / .env.example):
   1. pip install "band-sdk[langgraph]" langchain-openai
@@ -34,44 +34,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _run_investigation(fixture: str, consortium: bool) -> str:
-    """Shared implementation behind the Band tools (plain function, testable)."""
-    from . import LocalMesh
-    from ..data.synthetic import DEMO_FIXTURES, get_fixture
+def _run_investigation(transactions_csv: str, focus: str = "") -> str:
+    """Shared implementation behind the Band tool (plain function, testable).
+    Takes REAL transaction rows pasted into the room — never canned cases."""
+    from ..data.user_upload import cases_from_upload
     from ..orchestrator import Orchestrator
 
-    if fixture not in DEMO_FIXTURES:
-        return (f"Unknown fixture '{fixture}'. Available: "
-                f"{', '.join(sorted(DEMO_FIXTURES))}")
-    case = get_fixture(fixture)
+    try:
+        cases = cases_from_upload(transactions_csv.encode("utf-8"),
+                                  "band-room.csv", focus.strip() or None, limit=3)
+    except ValueError as exc:
+        return (f"Could not parse the transaction data: {exc} "
+                f"Paste CSV rows with headers like from,to,amount(,date,type).")
 
-    peers: list[str] = []
-    if consortium:
-        # Pre-seed a peer bank so the consortium demo finds a match (§7).
-        peer = LocalMesh(tenant_id="bank-beta")
-        peer.publish_pattern({"typology": "fan-in-then-burst", "txn_window_h": 72,
-                              "legs": 5, "passthrough": True})
-        peers = ["bank-beta"]
-
-    events: list[str] = []
-    orch = Orchestrator()
-    orch.mesh.subscribe(lambda ev: events.append(f"{ev.actor}:{ev.kind}"))
-    result = orch.investigate(case, peers)
-
-    evidence = [{"agent": e.agent, "claim": e.claim, "source": e.source,
-                 "confidence": e.confidence} for e in result.verified_evidence()]
-    return json.dumps({
-        "case_id": case.case_id,
-        "alert_type": case.alert_type,
-        "verdict": result.verdict.value,
-        "confidence": result.confidence,
-        "decision": result.decision.value,
-        "rationale": result.rationale,
-        "verified_evidence": evidence,
-        "rejected_claims": result.rejected_claims,
-        "consortium": result.consortium_confirmation,
-        "audit_trail": {"events": len(events), "sequence": events},
-    }, indent=2)
+    reports = []
+    for case in cases:
+        events: list[str] = []
+        orch = Orchestrator()
+        orch.mesh.subscribe(lambda ev: events.append(f"{ev.actor}:{ev.kind}"))
+        result = orch.investigate(case)
+        evidence = [{"agent": e.agent, "claim": e.claim, "source": e.source,
+                     "confidence": e.confidence} for e in result.verified_evidence()]
+        reports.append({
+            "account": case.focus_account,
+            "alert_type": case.alert_type,
+            "transactions_reviewed": len(case.transactions),
+            "verdict": result.verdict.value,
+            "confidence": result.confidence,
+            "decision": result.decision.value,
+            "rationale": result.rationale,
+            "verified_evidence": evidence,
+            "rejected_claims": result.rejected_claims,
+            "consortium": result.consortium_confirmation,
+            "audit_trail": {"events": len(events), "sequence": events},
+        })
+    return json.dumps({"accounts_analyzed": len(reports), "results": reports},
+                      indent=2)
 
 
 def build_adapter():
@@ -90,20 +88,18 @@ def build_adapter():
     from band.adapters import LangGraphAdapter
 
     @tool
-    def aegis_list_fixtures() -> str:
-        """List the demo case fixtures AEGIS can investigate."""
-        from ..data.synthetic import DEMO_FIXTURES
-        return ", ".join(sorted(DEMO_FIXTURES))
-
-    @tool
-    def aegis_investigate(fixture: str, consortium: bool = False) -> str:
-        """Run a full AEGIS multi-agent AML investigation on a demo fixture.
+    def aegis_investigate(transactions_csv: str, focus: str = "") -> str:
+        """Run a full AEGIS multi-agent AML investigation on real transaction data.
 
         Args:
-            fixture: which case to investigate (use aegis_list_fixtures to see them)
-            consortium: also query peer banks for matching abstract patterns
+            transactions_csv: the transaction rows as CSV text, including a header
+                row with columns for source account, destination account and
+                amount (e.g. from,to,amount,date,type). Pass the data exactly as
+                the user shared it.
+            focus: optionally a single account id to investigate; otherwise the
+                highest-risk accounts are triaged automatically.
         """
-        return _run_investigation(fixture, consortium)
+        return _run_investigation(transactions_csv, focus)
 
     # Brain = the reasoning tier (AI/ML API); degrades to local Ollama if no
     # key, mirroring ModelClient's fallback rule so this never hard-crashes.
@@ -116,15 +112,20 @@ def build_adapter():
     return LangGraphAdapter(
         llm=llm,
         checkpointer=InMemorySaver(),
-        additional_tools=[aegis_list_fixtures, aegis_investigate],
+        additional_tools=[aegis_investigate],
         custom_section="""You are AEGIS, a multi-agent anti-money-laundering
-investigation system. When someone in the room asks you to investigate a case:
-  1. Call aegis_investigate (use aegis_list_fixtures if unsure of the name).
-  2. Report the verdict, confidence and decision, then the surviving evidence
-     as a short bullet list — ALWAYS include each claim's citation (its source
-     field). Mention how many claims the Verifier rejected and why that matters
-     (no evidence, no verdict). If a consortium confirmation is present, state
-     that only an abstract pattern descriptor crossed banks, never raw data.
+investigation system. You only ever analyze REAL transaction data shared in
+the room — if someone asks you to investigate without providing data, ask them
+to paste their transaction rows (CSV with source, destination and amount
+columns) or upload them to the AEGIS dashboard. When data is provided:
+  1. Call aegis_investigate with the rows exactly as shared (and `focus` if
+     they named one account).
+  2. For each account report the verdict, confidence and decision, then the
+     surviving evidence as a short bullet list — ALWAYS include each claim's
+     citation (its source field). Mention how many claims the Verifier rejected
+     and why that matters (no evidence, no verdict). If a consortium
+     confirmation is present, state that only an abstract pattern descriptor
+     crossed banks, never raw data.
   3. Send the response with band_send_message.
 Never invent evidence: only report what the tools return.""",
     )

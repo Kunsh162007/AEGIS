@@ -1,16 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-type Ev = { actor: string; kind: string; authority: string; payload: any };
+type Ev = { actor: string; kind: string; authority: string; room?: string; payload: any };
 type Result = {
   verdict: string; confidence: number; decision: string; rationale: string;
   evidence: { agent: string; claim: string; source: string; verified: boolean | null; confidence: number | null; supports: string }[];
   rejected_claims: string[]; consortium_confirmation: string | null; report: string;
 };
-type UploadR = {
-  filename: string; accounts_analyzed: number;
-  results: { account: string; alert_type: string; transactions: number; result: Result & { case_id: string } }[];
-};
+type AccountResult = { account: string; alert_type: string; transactions: number; result: Result & { case_id: string } };
+type Plan = { filename: string; accounts: { account: string; alert_type: string; transactions: number }[] };
 type EvalR = {
   dataset?: string;
   baseline: { false_positive_rate: number; recall_catch_rate: number; false_positives: number };
@@ -23,83 +21,75 @@ const KIND_TAG: Record<string, string> = {
   consortium: "🤝", verdict: "⚖️", gate: "🧑‍⚖️", clear: "🟢", plan: "📋", room_opened: "📂",
 };
 
-type Tab = "analyze" | "demo" | "validation";
+type Tab = "analyze" | "benchmark";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("analyze");
 
-  // ── live demo state ────────────────────────────────────────────────────
-  const [fixtures, setFixtures] = useState<string[]>([]);
-  const [fixture, setFixture] = useState("structuring");
-  const [consortium, setConsortium] = useState(false);
+  // ── analyze (the product): upload -> live investigation -> verdicts ──────
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadFocus, setUploadFocus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
-  const [result, setResult] = useState<Result | null>(null);
-  const [running, setRunning] = useState(false);
-  const [evalR, setEvalR] = useState<EvalR | null>(null);
-  const [evalBusy, setEvalBusy] = useState(false);
+  const [results, setResults] = useState<AccountResult[]>([]);
+  const [doneN, setDoneN] = useState<number | null>(null);
+  const [uploadErr, setUploadErr] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetch("/api/fixtures").then((r) => r.json()).then((d) => setFixtures(d.fixtures)).catch(() => {});
-  }, []);
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [events]);
 
-  function run() {
-    setEvents([]); setResult(null); setRunning(true);
-    const url = `/api/investigate/stream?fixture=${fixture}&consortium=${consortium}`;
-    const es = new EventSource(url);
-    es.onmessage = (m) => {
-      const item = JSON.parse(m.data);
-      if (item.kind === "result") { setResult(item.payload); setRunning(false); es.close(); }
-      else setEvents((prev) => [...prev, item]);
-    };
-    es.onerror = () => { setRunning(false); es.close(); };
-  }
-  function runEval() {
-    fetch("/api/eval?limit=48").then((r) => r.json()).then(setEvalR).catch(() => {});
-  }
-  function runEvalPublic() {
-    setEvalBusy(true);
-    fetch("/api/eval/public?limit=200").then((r) => r.json())
-      .then(setEvalR).catch(() => {}).finally(() => setEvalBusy(false));
-  }
-
-  // ── bring-your-own-data state ──────────────────────────────────────────
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadFocus, setUploadFocus] = useState("");
-  const [uploadBusy, setUploadBusy] = useState(false);
-  const [uploadR, setUploadR] = useState<UploadR | null>(null);
-  const [uploadErr, setUploadErr] = useState("");
-  const [dragOver, setDragOver] = useState(false);
-
-  function runUpload() {
-    if (!uploadFile) return;
-    setUploadBusy(true); setUploadErr(""); setUploadR(null);
+  async function runUpload() {
+    if (!uploadFile || busy) return;
+    setBusy(true); setUploadErr(""); setPlan(null); setEvents([]); setResults([]); setDoneN(null);
     const fd = new FormData();
     fd.append("file", uploadFile);
     const qs = uploadFocus.trim() ? `?focus=${encodeURIComponent(uploadFocus.trim())}` : "";
-    fetch(`/api/analyze${qs}`, { method: "POST", body: fd })
-      .then(async (r) => {
-        const body = await r.json();
-        if (!r.ok) throw new Error(body.detail || "analysis failed");
-        setUploadR(body);
-      })
-      .catch((e) => setUploadErr(String(e.message || e)))
-      .finally(() => setUploadBusy(false));
+    try {
+      const r = await fetch(`/api/analyze/stream${qs}`, { method: "POST", body: fd });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.detail || `analysis failed (${r.status})`);
+      }
+      if (!r.body) throw new Error("streaming not supported by this browser");
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const item = JSON.parse(line);
+          if (item.kind === "plan") setPlan(item.payload);
+          else if (item.kind === "event") setEvents((p) => [...p, item.payload]);
+          else if (item.kind === "account_result") setResults((p) => [...p, item.payload]);
+          else if (item.kind === "done") setDoneN(item.payload.accounts_analyzed);
+        }
+      }
+    } catch (e: any) {
+      setUploadErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function downloadReport() {
-    if (!uploadR) return;
+    if (!results.length || !uploadFile) return;
     const lines: string[] = [
       `AEGIS INVESTIGATION REPORT`,
-      `File: ${uploadR.filename}`,
+      `File: ${uploadFile.name}`,
       `Generated: ${new Date().toISOString()}`,
-      `Accounts investigated: ${uploadR.accounts_analyzed}`,
+      `Accounts investigated: ${results.length}`,
       ``,
     ];
-    for (const r of uploadR.results) {
+    for (const r of results) {
       lines.push(`${"=".repeat(60)}`);
       lines.push(`ACCOUNT ${r.account} — ${r.result.verdict.toUpperCase()} (confidence ${r.result.confidence})`);
       lines.push(`Alert type: ${r.alert_type} · ${r.transactions} transactions reviewed`);
@@ -119,16 +109,32 @@ export default function Home() {
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `aegis-report-${uploadR.filename.replace(/\.[^.]+$/, "")}.txt`;
+    a.download = `aegis-report-${uploadFile.name.replace(/\.[^.]+$/, "")}.txt`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
 
-  const verified = result?.evidence.filter((e) => e.verified) ?? [];
-  const rejected = result?.evidence.filter((e) => e.verified === false) ?? [];
-  const suspiciousN = uploadR?.results.filter((r) => r.result.verdict === "suspicious").length ?? 0;
-  const reviewN = uploadR?.results.filter((r) => r.result.verdict === "uncertain").length ?? 0;
-  const clearedN = uploadR?.results.filter((r) => r.result.verdict === "benign").length ?? 0;
+  // ── benchmark: scored against external labels (IBM AML, public) ─────────
+  const [evalR, setEvalR] = useState<EvalR | null>(null);
+  const [evalBusy, setEvalBusy] = useState(false);
+  const [evalErr, setEvalErr] = useState("");
+
+  function runEvalPublic() {
+    setEvalBusy(true); setEvalErr("");
+    fetch("/api/eval/public?limit=200")
+      .then(async (r) => {
+        const body = await r.json();
+        if (body.error) throw new Error(body.error);
+        setEvalR(body);
+      })
+      .catch((e) => setEvalErr(String(e.message || e)))
+      .finally(() => setEvalBusy(false));
+  }
+
+  const suspiciousN = results.filter((r) => r.result.verdict === "suspicious").length;
+  const reviewN = results.filter((r) => r.result.verdict === "uncertain").length;
+  const clearedN = results.filter((r) => r.result.verdict === "benign").length;
+  const investigating = busy && plan ? plan.accounts[results.length]?.account : null;
 
   return (
     <div className="wrap">
@@ -145,13 +151,10 @@ export default function Home() {
 
       <nav className="tabs">
         <button className={`tab ${tab === "analyze" ? "active" : ""}`} onClick={() => setTab("analyze")}>
-          Analyze your data
+          Analyze
         </button>
-        <button className={`tab ${tab === "demo" ? "active" : ""}`} onClick={() => setTab("demo")}>
-          Live demo
-        </button>
-        <button className={`tab ${tab === "validation" ? "active" : ""}`} onClick={() => setTab("validation")}>
-          Validation
+        <button className={`tab ${tab === "benchmark" ? "active" : ""}`} onClick={() => setTab("benchmark")}>
+          Benchmark
         </button>
       </nav>
 
@@ -183,10 +186,10 @@ export default function Home() {
             <div className="controls" style={{ marginTop: 14, marginBottom: 0 }}>
               <input className="input" type="text" placeholder="Focus on one account (optional)"
                 value={uploadFocus} onChange={(e) => setUploadFocus(e.target.value)} />
-              <button className="primary" onClick={runUpload} disabled={!uploadFile || uploadBusy}>
-                {uploadBusy ? "Investigating…" : "Run investigation"}
+              <button className="primary" onClick={runUpload} disabled={!uploadFile || busy}>
+                {busy ? "Investigating…" : "Run investigation"}
               </button>
-              {uploadR && <button className="ghost" onClick={downloadReport}>⬇ Download report</button>}
+              {results.length > 0 && !busy && <button className="ghost" onClick={downloadReport}>⬇ Download report</button>}
             </div>
             <div className="finehint">
               Needs columns for source account, destination account and amount — common header
@@ -196,122 +199,91 @@ export default function Home() {
             {uploadErr && <div className="error">⚠ {uploadErr}</div>}
           </div>
 
-          {uploadR && (
+          {plan && (
             <>
               <div className="summary">
-                <div className="chip">{uploadR.filename}</div>
-                <div className="chip red">{suspiciousN} suspicious</div>
-                {reviewN > 0 && <div className="chip amber">{reviewN} needs human review</div>}
-                <div className="chip green">{clearedN} cleared</div>
+                <div className="chip">{plan.filename}</div>
+                <div className="chip">{plan.accounts.length} account{plan.accounts.length === 1 ? "" : "s"} selected by risk triage</div>
+                {doneN !== null && (
+                  <>
+                    <div className="chip red">{suspiciousN} suspicious</div>
+                    {reviewN > 0 && <div className="chip amber">{reviewN} needs human review</div>}
+                    <div className="chip green">{clearedN} cleared</div>
+                  </>
+                )}
               </div>
-              {uploadR.results.map((r, i) => {
-                const v = r.result.evidence.filter((e) => e.verified);
-                return (
-                  <div className="panel" style={{ marginTop: 12 }} key={i}>
-                    <div className={`verdict-box ${r.result.verdict}`}>
-                      <div className="verdict-big">{r.result.verdict}</div>
-                      <div>account <b>{r.account}</b> · {r.transactions} txns reviewed · confidence {r.result.confidence}</div>
-                      <div className="decision">
-                        {r.result.decision === "auto_clear" ? "🟢 Auto-cleared" : "🧑‍⚖️ Escalated for human review"}
-                        <br />{r.result.rationale}
-                      </div>
-                    </div>
-                    {v.map((e, j) => (
-                      <div className="evi" key={j}>{e.claim}<br />
-                        <span className="src">{e.agent} · {e.source} · conf {e.confidence}</span></div>
-                    ))}
+
+              <div className="grid">
+                <div className="panel">
+                  <h2>Live investigation (governed audit stream)
+                    {investigating && <span className="src"> · investigating {investigating}</span>}
+                  </h2>
+                  <div className="feed" ref={feedRef}>
+                    {events.length === 0 && <div className="sub">Agent actions appear here as they happen.</div>}
+                    {events.map((e, i) => {
+                      const isReject = e.kind === "rejected" || (e.kind === "verify" && e.payload?.verified === false);
+                      const tag = e.kind === "verify" ? (e.payload?.verified ? "✅" : "❌") : (KIND_TAG[e.kind] ?? "•");
+                      const text = e.payload?.claim || e.payload?.note || e.payload?.argument ||
+                        e.payload?.verdict || e.payload?.role || e.kind;
+                      return (
+                        <div className={`ev ${isReject ? "reject" : ""}`} key={i}>
+                          <span>{tag}</span>
+                          <span className="who">{e.actor}</span>
+                          <span>{typeof text === "string" ? text : JSON.stringify(text)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+
+                <div className="panel">
+                  <h2>Verdicts & evidence ({results.length}/{plan.accounts.length})</h2>
+                  {results.length === 0 && <div className="sub">Each account&apos;s verdict lands here once its investigation completes.</div>}
+                  {results.map((r, i) => {
+                    const v = r.result.evidence.filter((e) => e.verified);
+                    return (
+                      <div key={i} style={{ marginBottom: 14 }}>
+                        <div className={`verdict-box ${r.result.verdict}`}>
+                          <div className="verdict-big">{r.result.verdict}</div>
+                          <div>account <b>{r.account}</b> · {r.transactions} txns reviewed · confidence {r.result.confidence}</div>
+                          <div className="decision">
+                            {r.result.decision === "auto_clear" ? "🟢 Auto-cleared" : "🧑‍⚖️ Escalated for human review"}
+                            <br />{r.result.rationale}
+                          </div>
+                        </div>
+                        {v.map((e, j) => (
+                          <div className="evi" key={j}>{e.claim}<br />
+                            <span className="src">{e.agent} · {e.source} · conf {e.confidence}</span></div>
+                        ))}
+                        {r.result.rejected_claims.length > 0 && (
+                          <div className="evi rej">Verifier rejected {r.result.rejected_claims.length} uncited claim{r.result.rejected_claims.length === 1 ? "" : "s"}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </>
           )}
         </>
       )}
 
-      {/* ════════ LIVE DEMO ════════ */}
-      {tab === "demo" && (
-        <>
-          <div className="controls">
-            <select value={fixture} onChange={(e) => setFixture(e.target.value)}>
-              {fixtures.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-            <label className="chk">
-              <input type="checkbox" checked={consortium} onChange={(e) => setConsortium(e.target.checked)} />
-              cross-bank consortium
-            </label>
-            <button className="primary" onClick={run} disabled={running}>
-              {running ? "Investigating…" : "▶ Run investigation"}
-            </button>
-          </div>
-
-          <div className="grid">
-            <div className="panel">
-              <h2>Live investigation (governed audit stream)</h2>
-              <div className="feed" ref={feedRef}>
-                {events.length === 0 && <div className="sub">Press “Run investigation” to watch the agents work.</div>}
-                {events.map((e, i) => {
-                  const isReject = e.kind === "rejected" || (e.kind === "verify" && e.payload?.verified === false);
-                  const tag = e.kind === "verify" ? (e.payload?.verified ? "✅" : "❌") : (KIND_TAG[e.kind] ?? "•");
-                  const text = e.payload?.claim || e.payload?.note || e.payload?.argument ||
-                    e.payload?.verdict || e.payload?.role || e.kind;
-                  return (
-                    <div className={`ev ${isReject ? "reject" : ""}`} key={i}>
-                      <span>{tag}</span>
-                      <span className="who">{e.actor}</span>
-                      <span>{typeof text === "string" ? text : JSON.stringify(text)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="panel">
-              <h2>Verdict & evidence chain</h2>
-              {!result && <div className="sub">The verdict, evidence chain, and autonomy decision appear here.</div>}
-              {result && (
-                <>
-                  <div className={`verdict-box ${result.verdict}`}>
-                    <div className="verdict-big">{result.verdict}</div>
-                    <div>confidence {result.confidence}</div>
-                    <div className="decision">
-                      {result.decision === "auto_clear" ? "🟢 Auto-cleared autonomously" : "🧑‍⚖️ Escalated to compliance officer"}
-                      <br />{result.rationale}
-                    </div>
-                  </div>
-                  {result.consortium_confirmation && (
-                    <div className="consortium">🤝 {result.consortium_confirmation}</div>
-                  )}
-                  <h2 style={{ marginTop: 16 }}>Verified claims ({verified.length})</h2>
-                  {verified.map((e, i) => (
-                    <div className="evi" key={i}>{e.claim}<br /><span className="src">{e.agent} · {e.source} · conf {e.confidence}</span></div>
-                  ))}
-                  {rejected.length > 0 && <h2 style={{ marginTop: 16 }}>Rejected by Verifier ({rejected.length})</h2>}
-                  {rejected.map((e, i) => (
-                    <div className="evi rej" key={i}>{e.claim}<br /><span className="src">{e.agent} · {e.source || "no source"}</span></div>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ════════ VALIDATION ════════ */}
-      {tab === "validation" && (
+      {/* ════════ BENCHMARK ════════ */}
+      {tab === "benchmark" && (
         <div className="panel">
           <h2>Measured accuracy — single-pass baseline vs AEGIS
-            {evalR?.dataset && <span className="src"> · {evalR.dataset.startsWith("public")
-              ? "IBM AML public benchmark (external labels)" : "synthetic sanity check"}</span>}
+            {evalR && <span className="src"> · IBM AML public benchmark (external labels)</span>}
           </h2>
           <div className="controls">
-            <button onClick={runEval}>Synthetic sanity check</button>
             <button className="primary" onClick={runEvalPublic} disabled={evalBusy}>
               {evalBusy ? "Scoring…" : "Score on IBM AML benchmark"}
             </button>
           </div>
-          {!evalR && <div className="sub">The benchmark scores AEGIS on a slice of the IBM
+          {evalErr && <div className="error">⚠ {evalErr}</div>}
+          {!evalR && <div className="sub">Scores AEGIS on a slice of the public IBM
             Anti-Money-Laundering dataset whose labels were authored externally —
-            measuring how many false alerts AEGIS clears while keeping the catch rate.</div>}
+            measuring how many false alerts AEGIS clears while keeping the catch rate.
+            Nothing here is self-graded.</div>}
           {evalR && (
             <>
               <div className="metrics">

@@ -1,10 +1,11 @@
 """evaluate() — runs the baseline and full AEGIS over a labeled dataset and
 computes the headline numbers: false-positive reduction and true-positive catch
-rate (§9). Point it at a public benchmark for the credible number; the synthetic
-set is a quick offline sanity check.
+rate (§9). The default is the PUBLIC benchmark (externally-authored labels —
+the credible number); `--synthetic` is a dev-only regression sanity check.
 
-    python -m src.eval.harness                 # synthetic sanity check
-    python -m src.eval.harness --public        # public benchmark (needs PUBLIC_DATASET_PATH)
+    python -m src.eval.harness                 # public benchmark (bundled IBM AML slice
+                                               # or PUBLIC_DATASET_PATH if set)
+    python -m src.eval.harness --synthetic     # dev-only offline sanity check
 """
 from __future__ import annotations
 
@@ -61,20 +62,22 @@ def evaluate(cases: list[Case], dataset_name: str = "synthetic") -> dict:
     }
 
 
-def _load(public: bool, limit: int) -> tuple[list[Case], str]:
-    if public:
-        from ..config import settings
-        from ..data.public_loader import load_public
-        return load_public(limit=limit), f"public:{settings.public_dataset_kind}"
-    return labeled_dataset(n=limit), "synthetic"
+def _load(synthetic: bool, limit: int) -> tuple[list[Case], str]:
+    if synthetic:
+        return labeled_dataset(n=limit), "synthetic (dev sanity check — not the headline number)"
+    from ..config import settings
+    from ..data.public_loader import load_public
+    kind = settings.public_dataset_kind if settings.public_dataset_path else "ibm-aml-sample"
+    return load_public(limit=limit), f"public:{kind}"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--public", action="store_true", help="use the public benchmark")
-    ap.add_argument("--limit", type=int, default=40)
+    ap.add_argument("--synthetic", action="store_true",
+                    help="dev-only synthetic sanity check instead of the public benchmark")
+    ap.add_argument("--limit", type=int, default=200)
     args = ap.parse_args()
-    cases, name = _load(args.public, args.limit)
+    cases, name = _load(args.synthetic, args.limit)
     print(json.dumps(evaluate(cases, dataset_name=name), indent=2))
 
 

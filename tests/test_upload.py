@@ -92,3 +92,43 @@ def test_analyze_endpoint():
 
     bad = client.post("/api/analyze", files={"file": ("x.csv", b"foo,bar\n1,2\n", "text/csv")})
     assert bad.status_code == 422
+
+
+def test_analyze_stream_endpoint():
+    """The live product path: NDJSON stream of plan -> agent events -> verdicts."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    client = TestClient(app)
+    with client.stream("POST", "/api/analyze/stream?limit=1",
+                       files={"file": ("ledger.csv", MULE_CSV, "text/csv")}) as r:
+        assert r.status_code == 200
+        lines = [json.loads(line) for line in r.iter_lines() if line.strip()]
+
+    kinds = [item["kind"] for item in lines]
+    assert kinds[0] == "plan"
+    assert lines[0]["payload"]["accounts"][0]["account"] == "MULE-7"
+    assert "event" in kinds  # the governed audit trail streamed live
+    assert kinds[-1] == "done"
+    results = [item for item in lines if item["kind"] == "account_result"]
+    assert len(results) == 1
+    assert results[0]["payload"]["account"] == "MULE-7"
+    assert results[0]["payload"]["result"]["verdict"] == "suspicious"
+
+
+def test_band_agent_tool_runs_on_real_rows():
+    """The Band-room tool investigates pasted CSV text, never canned cases."""
+    import json
+
+    from src.band.band_agent import _run_investigation
+
+    out = json.loads(_run_investigation(MULE_CSV.decode(), focus="MULE-7"))
+    assert out["accounts_analyzed"] == 1
+    assert out["results"][0]["account"] == "MULE-7"
+    assert out["results"][0]["verdict"] == "suspicious"
+    assert out["results"][0]["verified_evidence"]  # cited claims survived
+
+    err = _run_investigation("this is not transaction data")
+    assert "Could not parse" in err

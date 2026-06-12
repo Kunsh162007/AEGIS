@@ -1,6 +1,8 @@
-"""Synthetic, labeled case generator — for the *narrated demo storylines* only
-(§9). Ground-truth labels are attached for the eval harness; agents never read
-them. NO REAL PII, EVER — names are obviously fake.
+"""Synthetic, labeled case generator — used ONLY by the test-suite and the
+offline eval sanity check. It is never user-facing: the product analyzes
+uploaded data (user_upload.py) and the headline accuracy comes from the public
+benchmark (public_loader.py). Ground-truth labels are attached for scoring;
+agents never read them. NO REAL PII, EVER — names are obviously fake.
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ def _mk_party(i: int, **kw) -> Party:
     return Party(account=_acct(i), **kw)
 
 
-def case_structuring(case_id: str = "DEMO-STRUCTURING", rng: random.Random | None = None) -> Case:
+def case_structuring(case_id: str = "TEST-STRUCTURING", rng: random.Random | None = None) -> Case:
     """SUSPICIOUS: many sub-$10k deposits in a tight window (smurfing)."""
     rng = rng or random.Random(1)
     t0 = datetime(2026, 5, 1, 9, 0)
@@ -42,7 +44,7 @@ def case_structuring(case_id: str = "DEMO-STRUCTURING", rng: random.Random | Non
                 parties=parties, transactions=txns, label=Verdict.SUSPICIOUS)
 
 
-def case_mule_network(case_id: str = "DEMO-MULE", rng: random.Random | None = None) -> Case:
+def case_mule_network(case_id: str = "TEST-MULE", rng: random.Random | None = None) -> Case:
     """SUSPICIOUS: fan-in to one account then a fast burst out (mule ring)."""
     rng = rng or random.Random(2)
     t0 = datetime(2026, 5, 3, 8, 0)
@@ -62,7 +64,7 @@ def case_mule_network(case_id: str = "DEMO-MULE", rng: random.Random | None = No
                 parties=parties, transactions=txns, label=Verdict.SUSPICIOUS)
 
 
-def case_salary_spike(case_id: str = "DEMO-SALARY", rng: random.Random | None = None) -> Case:
+def case_salary_spike(case_id: str = "TEST-SALARY", rng: random.Random | None = None) -> Case:
     """BENIGN-but-flagged: a one-off large credit that is actually a bonus."""
     rng = rng or random.Random(3)
     t0 = datetime(2026, 5, 5, 10, 0)
@@ -77,7 +79,7 @@ def case_salary_spike(case_id: str = "DEMO-SALARY", rng: random.Random | None = 
                 parties=[emp, employer], transactions=txns, label=Verdict.BENIGN)
 
 
-def case_property_sale(case_id: str = "DEMO-PROPERTY", rng: random.Random | None = None) -> Case:
+def case_property_sale(case_id: str = "TEST-PROPERTY", rng: random.Random | None = None) -> Case:
     """BENIGN-but-flagged: a single very large credit from a known conveyancer."""
     rng = rng or random.Random(4)
     t0 = datetime(2026, 5, 6, 11, 0)
@@ -92,7 +94,7 @@ def case_property_sale(case_id: str = "DEMO-PROPERTY", rng: random.Random | None
                 parties=[seller, conveyancer], transactions=txns, label=Verdict.BENIGN)
 
 
-def case_subtle_mule(case_id: str = "DEMO-SUBTLE", rng: random.Random | None = None) -> Case:
+def case_subtle_mule(case_id: str = "TEST-SUBTLE", rng: random.Random | None = None) -> Case:
     """HARD SUSPICIOUS (honest miss): an early-stage mule — only two feeders and
     no onward burst yet, so it stays below every detector's floor. Both the
     baseline AND AEGIS miss it. Keeps the eval's recall honestly below 100%."""
@@ -108,7 +110,7 @@ def case_subtle_mule(case_id: str = "DEMO-SUBTLE", rng: random.Random | None = N
                 parties=[hub] + feeders, transactions=txns, label=Verdict.SUSPICIOUS)
 
 
-def case_legit_business(case_id: str = "DEMO-BIZ", rng: random.Random | None = None) -> Case:
+def case_legit_business(case_id: str = "TEST-BIZ", rng: random.Random | None = None) -> Case:
     """HARD BENIGN (honest false positive): a legitimate small business — many
     customer payments in, one supplier payment out. It is structurally identical
     to a mule (fan-in + pass-through), so AEGIS flags it too. A realistic FP that
@@ -130,14 +132,6 @@ def case_legit_business(case_id: str = "DEMO-BIZ", rng: random.Random | None = N
                 parties=[biz, supplier] + customers, transactions=txns, label=Verdict.BENIGN)
 
 
-DEMO_FIXTURES = {
-    "structuring": case_structuring,
-    "mule": case_mule_network,
-    "salary": case_salary_spike,
-    "property": case_property_sale,
-}
-
-
 def labeled_dataset(n: int = 40, seed: int = 7) -> list[Case]:
     """A small reproducible labeled set for a quick offline eval sanity check.
     Deliberately includes hard cases (a missed early-stage mule, a legitimate
@@ -148,9 +142,3 @@ def labeled_dataset(n: int = 40, seed: int = 7) -> list[Case]:
     builders = [case_structuring, case_mule_network, case_salary_spike,
                 case_property_sale, case_subtle_mule, case_legit_business]
     return [builders[i % len(builders)](case_id=f"SYN-{i:03d}", rng=rng) for i in range(n)]
-
-
-def get_fixture(name: str) -> Case:
-    if name not in DEMO_FIXTURES:
-        raise KeyError(f"unknown fixture '{name}'. Options: {list(DEMO_FIXTURES)}")
-    return DEMO_FIXTURES[name]()

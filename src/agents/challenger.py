@@ -70,7 +70,7 @@ class ChallengerAgent(BaseAgent):
     def _llm_innocent_explanations(self, case: Case, evidence: list[Evidence]) -> list[dict]:
         """Ask the reasoning model for a plausible legitimate explanation of the
         flagged behaviour. Returns [] in mock mode or on any failure (so the
-        deterministic demo and the offline path are unchanged)."""
+        deterministic offline path is unchanged)."""
         if getattr(self.model, "provider", "mock") == "mock":
             return []  # offline/mock: keep the deterministic keyword behaviour
         try:

@@ -1,23 +1,24 @@
-"""CLI entrypoint — run one investigation end to end and print the result.
+"""CLI entrypoint — investigate a real transaction file end to end and print
+the governed audit trail plus each verdict.
 
-    python -m src.main                     # structuring fixture
-    python -m src.main --fixture mule --consortium
-    python -m src.main --fixture salary    # benign-but-flagged -> watch it get cleared
+    python -m src.main examples/sample_transactions.csv
+    python -m src.main ledger.xlsx --focus ACC1042
+    python -m src.main export.json --limit 3
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-# Windows consoles default to cp1252; force UTF-8 so the demo emoji render.
+# Windows consoles default to cp1252; force UTF-8 so the audit-trail emoji render.
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 except Exception:
     pass
 
-from .band import LocalMesh
 from .band.interface import AuditEvent
-from .data.synthetic import DEMO_FIXTURES, get_fixture
+from .data.user_upload import cases_from_upload
 from .models.client import TOKEN_LEDGER
 from .orchestrator import Orchestrator
 
@@ -34,34 +35,39 @@ def _print_event(ev: AuditEvent) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Run an AEGIS investigation.")
-    ap.add_argument("--fixture", default="structuring", choices=list(DEMO_FIXTURES))
-    ap.add_argument("--consortium", action="store_true")
+    ap = argparse.ArgumentParser(
+        description="Investigate a transaction file (CSV / Excel / JSON / text PDF).")
+    ap.add_argument("file", help="path to the transaction file to investigate")
+    ap.add_argument("--focus", default=None,
+                    help="investigate one named account instead of risk-triaging")
+    ap.add_argument("--limit", type=int, default=3,
+                    help="how many top-risk accounts to investigate (default 3)")
     args = ap.parse_args()
 
-    case = get_fixture(args.fixture)
-    print(f"\n=== AEGIS investigating {case.case_id} ({case.alert_type}) ===\n")
+    path = Path(args.file)
+    if not path.is_file():
+        raise SystemExit(f"File not found: {path}")
+    try:
+        cases = cases_from_upload(path.read_bytes(), path.name, args.focus, args.limit)
+    except ValueError as exc:
+        raise SystemExit(f"Could not parse {path.name}: {exc}")
 
-    peers = []
-    if args.consortium:
-        peer = LocalMesh(tenant_id="bank-beta")
-        peer.publish_pattern({"typology": "fan-in-then-burst", "txn_window_h": 72,
-                              "legs": 5, "passthrough": True})
-        peers = ["bank-beta"]
+    print(f"\n{path.name}: {len(cases)} account(s) selected by risk triage")
+    for case in cases:
+        print(f"\n=== AEGIS investigating {case.focus_account} "
+              f"({case.alert_type}, {len(case.transactions)} txns) ===\n")
+        result = Orchestrator().investigate(case, on_event=_print_event)
 
-    orch = Orchestrator()
-    result = orch.investigate(case, peers, on_event=_print_event)
-
-    print("\n--- VERDICT ---")
-    print(f"  Verdict:    {result.verdict.value}  (confidence {result.confidence})")
-    print(f"  Decision:   {result.decision.value}")
-    print(f"  Rationale:  {result.rationale}")
-    if result.rejected_claims:
-        print(f"  Rejected:   {len(result.rejected_claims)} claim(s) during verification")
-    if result.consortium_confirmation:
-        print(f"  Consortium: {result.consortium_confirmation}")
-    if result.report:
-        print(f"\n--- DRAFT SAR ---\n{result.report}")
+        print("\n--- VERDICT ---")
+        print(f"  Verdict:    {result.verdict.value}  (confidence {result.confidence})")
+        print(f"  Decision:   {result.decision.value}")
+        print(f"  Rationale:  {result.rationale}")
+        if result.rejected_claims:
+            print(f"  Rejected:   {len(result.rejected_claims)} claim(s) during verification")
+        if result.consortium_confirmation:
+            print(f"  Consortium: {result.consortium_confirmation}")
+        if result.report:
+            print(f"\n--- DRAFT SAR ---\n{result.report}")
 
     approx = sum(e["approx_tokens"] for e in TOKEN_LEDGER)
     print(f"\n(approx LLM tokens this run: {approx}; provider calls logged: {len(TOKEN_LEDGER)})")

@@ -1,7 +1,7 @@
 # Bundled public benchmark — `ibm_sample.csv`
 
 A small, balanced, **externally-labelled** slice of the **IBM "Transactions for
-Anti-Money-Laundering (AML)"** dataset (HI-Small variant), so the deployed demo
+Anti-Money-Laundering (AML)"** dataset (HI-Small variant), so the deployed app
 can show a credible accuracy number (§9) without a ~475 MB download.
 
 - **Source:** <https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml> (synthetic — **no real PII**, licence CC BY-SA 4.0).

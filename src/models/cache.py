@@ -1,6 +1,6 @@
 """Tiny on-disk response cache keyed on (provider, model, prompt).
 
-Re-running the same demo case during development costs zero tokens (§15).
+Re-running the same case during development costs zero tokens (§15).
 """
 from __future__ import annotations
 

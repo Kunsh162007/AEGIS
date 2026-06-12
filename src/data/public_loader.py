@@ -34,7 +34,7 @@ from ..config import settings
 from .schema import Case, Party, Transaction, Verdict
 
 # A small, balanced, externally-labelled slice of a public benchmark ships with
-# the repo so the deployed demo can show a real (not synthetic) number without a
+# the repo so the deployed app can show a real (not synthetic) number without a
 # 500MB download. See src/data/benchmarks/README.md for provenance.
 _BENCHMARKS_DIR = Path(__file__).resolve().parent / "benchmarks"
 
@@ -98,7 +98,7 @@ def _edges_from_df(df, kind: str) -> list[dict]:
             })
     elif kind == "generic":
         # Pre-normalised money-flow CSV: src,dst,amount,isFraud[,step,channel].
-        # This is the format the bundled benchmark sample ships in, so the demo
+        # This is the format the bundled benchmark sample ships in, so the app
         # never parses a dataset-specific schema at request time.
         for i, r in df.iterrows():
             edges.append({
@@ -169,9 +169,13 @@ def load_public(path: str | None = None, kind: str | None = None,
     path = path or settings.public_dataset_path
     kind = (kind or settings.public_dataset_kind or "paysim").lower()
     if not path:
+        # No full dataset configured — fall back to the externally-labelled
+        # IBM AML slice bundled with the repo so the benchmark always works.
+        path, kind = bundled_sample_path("ibm"), "generic"
+    if not path:
         raise FileNotFoundError(
-            "No PUBLIC_DATASET_PATH set. Download PaySim/IBM-AML/Elliptic from "
-            "Kaggle and point .env at the CSV, or use synthetic.labeled_dataset().")
+            "No PUBLIC_DATASET_PATH set and no bundled benchmark sample found. "
+            "Download IBM-AML/PaySim/Elliptic from Kaggle and point .env at the CSV.")
 
     # Read enough rows that focus accounts have several transactions each, but
     # bound it with `nrows` so a multi-hundred-MB full dataset never loads

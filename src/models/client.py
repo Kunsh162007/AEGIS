@@ -43,7 +43,7 @@ class ModelClient:
         else:
             # Every feature must degrade to mock (CLAUDE rule 2): if a real
             # provider errors (bad/missing key, network, rate limit, Ollama not
-            # running), fall back to deterministic mock narration so a live demo
+            # running), fall back to deterministic mock narration so a live run
             # never crashes. The fallback is recorded transparently in the ledger.
             try:
                 text = self._openai_compatible(cfg, prompt, system=system, max_tokens=max_tokens)

@@ -1,6 +1,7 @@
-"""FastAPI backend (§11 #14). Drives an investigation, streams every agent
-action live to the dashboard via SSE, exposes the verdict/evidence and the
-accuracy eval.
+"""FastAPI backend (§11 #14). Investigates USER-PROVIDED transaction data —
+uploaded CSV/Excel/JSON/PDF — streaming every agent action live to the
+dashboard, and scores AEGIS against the public IBM AML benchmark. There is no
+canned-fixture path: every verdict is computed from data the caller supplied.
 
     uvicorn src.api.main:app --reload
 """
@@ -15,12 +16,10 @@ import os
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sse_starlette.sse import EventSourceResponse
 
-from ..band import LocalMesh
 from ..band.interface import AuditEvent
-from ..data.synthetic import DEMO_FIXTURES, get_fixture, labeled_dataset
 from ..eval.harness import evaluate
 from ..orchestrator import Orchestrator
 
@@ -40,66 +39,6 @@ def _event_dict(ev: AuditEvent) -> dict:
             "kind": ev.kind, "authority": ev.authority, "payload": ev.payload}
 
 
-@app.get("/api/fixtures")
-def fixtures() -> dict:
-    return {"fixtures": list(DEMO_FIXTURES.keys())}
-
-
-@app.get("/api/investigate/stream")
-async def investigate_stream(fixture: str = "structuring", consortium: bool = False):
-    """Run an investigation and stream each agent action as it happens."""
-    case = get_fixture(fixture)
-    queue: asyncio.Queue = asyncio.Queue()
-    loop = asyncio.get_event_loop()
-
-    def on_event(ev: AuditEvent) -> None:
-        loop.call_soon_threadsafe(queue.put_nowait, _event_dict(ev))
-
-    async def runner():
-        # Pre-seed a peer bank so the consortium demo finds a match (§7).
-        peers = []
-        if consortium:
-            peer = LocalMesh(tenant_id="bank-beta")
-            peer.publish_pattern({"typology": "fan-in-then-burst", "txn_window_h": 72,
-                                  "legs": 5, "passthrough": True})
-            peers = ["bank-beta"]
-        orch = Orchestrator()
-        result = await asyncio.to_thread(orch.investigate, case, peers, on_event)
-        await queue.put({"kind": "result", "payload": json.loads(result.model_dump_json())})
-        await queue.put({"kind": "__done__"})
-
-    async def event_source():
-        task = asyncio.create_task(runner())
-        while True:
-            item = await queue.get()
-            if item.get("kind") == "__done__":
-                break
-            yield {"data": json.dumps(item)}
-        await task
-
-    return EventSourceResponse(event_source())
-
-
-@app.get("/api/investigate")
-async def investigate(fixture: str = "structuring", consortium: bool = False) -> dict:
-    case = get_fixture(fixture)
-    peers = []
-    if consortium:
-        peer = LocalMesh(tenant_id="bank-beta")
-        peer.publish_pattern({"typology": "fan-in-then-burst", "txn_window_h": 72,
-                              "legs": 5, "passthrough": True})
-        peers = ["bank-beta"]
-    orch = Orchestrator()
-    result = orch.investigate(case, peers)
-    return json.loads(result.model_dump_json())
-
-
-@app.get("/api/eval")
-async def run_eval(limit: int = 40) -> dict:
-    cases = labeled_dataset(n=limit)
-    return await asyncio.to_thread(evaluate, cases, "synthetic")
-
-
 @app.get("/api/eval/public")
 async def run_eval_public(limit: int = 200) -> dict:
     """Baseline-vs-AEGIS on a bundled slice of a PUBLIC benchmark (IBM AML,
@@ -117,35 +56,44 @@ async def run_eval_public(limit: int = 200) -> dict:
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB covers sizeable ledger exports
 
 
-@app.post("/api/analyze")
-async def analyze_upload(file: UploadFile = File(...), focus: str = "",
-                         limit: int = 5) -> dict:
-    """Bring-your-own-data: upload a transaction file (CSV / Excel / JSON /
-    text-based PDF) and AEGIS investigates the most active accounts in it (or
-    the one named in `focus`). The file is parsed in memory only — never
-    stored. No labels are involved; this is real inference on the caller's
-    data. Accounts are investigated in parallel."""
-    from concurrent.futures import ThreadPoolExecutor
-
+async def _cases_from_request(file: UploadFile, focus: str, limit: int):
+    """Read + parse an uploaded transaction file into investigation cases,
+    translating size/parse problems into clean HTTP errors."""
     from ..data.user_upload import cases_from_upload
 
     data = await file.read()
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File too large (max 25 MB). Export a smaller slice.")
     try:
-        cases = await asyncio.to_thread(
+        return await asyncio.to_thread(
             cases_from_upload, data, file.filename or "upload.csv", focus or None, limit)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
+
+def _result_dict(case, result) -> dict:
+    return {
+        "account": case.focus_account,
+        "alert_type": case.alert_type,
+        "transactions": len(case.transactions),
+        "result": json.loads(result.model_dump_json()),
+    }
+
+
+@app.post("/api/analyze")
+async def analyze_upload(file: UploadFile = File(...), focus: str = "",
+                         limit: int = 5) -> dict:
+    """Bring-your-own-data: upload a transaction file (CSV / Excel / JSON /
+    text-based PDF) and AEGIS investigates the highest-risk accounts in it (or
+    the one named in `focus`). The file is parsed in memory only — never
+    stored. No labels are involved; this is real inference on the caller's
+    data. Accounts are investigated in parallel."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    cases = await _cases_from_request(file, focus, limit)
+
     def _one(case) -> dict:
-        result = Orchestrator().investigate(case)
-        return {
-            "account": case.focus_account,
-            "alert_type": case.alert_type,
-            "transactions": len(case.transactions),
-            "result": json.loads(result.model_dump_json()),
-        }
+        return _result_dict(case, Orchestrator().investigate(case))
 
     def _run() -> list[dict]:
         with ThreadPoolExecutor(max_workers=min(4, len(cases))) as pool:
@@ -154,6 +102,55 @@ async def analyze_upload(file: UploadFile = File(...), focus: str = "",
     results = await asyncio.to_thread(_run)
     return {"filename": file.filename, "accounts_analyzed": len(results),
             "results": results}
+
+
+@app.post("/api/analyze/stream")
+async def analyze_upload_stream(file: UploadFile = File(...), focus: str = "",
+                                limit: int = 5):
+    """Same as /api/analyze but streams NDJSON so the dashboard can show the
+    governed audit trail — every specialist claim, challenge, verification and
+    rejection — live while the caller's own data is being investigated.
+
+    Line kinds: `plan` (accounts selected), `event` (one agent action),
+    `account_result` (one finished verdict), `done` (summary)."""
+    cases = await _cases_from_request(file, focus, limit)
+    filename = file.filename or "upload.csv"
+
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_event_loop()
+
+    def on_event(ev: AuditEvent) -> None:
+        loop.call_soon_threadsafe(
+            queue.put_nowait, {"kind": "event", "payload": _event_dict(ev)})
+
+    async def runner():
+        # Sequential on purpose: the audit feed should read as one coherent
+        # investigation at a time, not four interleaved ones.
+        await queue.put({"kind": "plan", "payload": {
+            "filename": filename,
+            "accounts": [{"account": c.focus_account, "alert_type": c.alert_type,
+                          "transactions": len(c.transactions)} for c in cases]}})
+        results = []
+        for case in cases:
+            result = await asyncio.to_thread(
+                Orchestrator().investigate, case, None, on_event)
+            r = _result_dict(case, result)
+            results.append(r)
+            await queue.put({"kind": "account_result", "payload": r})
+        await queue.put({"kind": "done", "payload": {
+            "filename": filename, "accounts_analyzed": len(results)}})
+        await queue.put({"kind": "__close__"})
+
+    async def ndjson():
+        task = asyncio.create_task(runner())
+        while True:
+            item = await queue.get()
+            if item["kind"] == "__close__":
+                break
+            yield json.dumps(item) + "\n"
+        await task
+
+    return StreamingResponse(ndjson(), media_type="application/x-ndjson")
 
 
 @app.get("/api/health")

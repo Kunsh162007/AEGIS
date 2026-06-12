@@ -29,17 +29,16 @@
 # from the repo root:  aegis\
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt          # or the minimal set: pydantic python-dotenv networkx fastapi "uvicorn[standard]" sse-starlette pandas scikit-learn
+pip install -r requirements.txt          # or the minimal set: pydantic python-dotenv networkx fastapi "uvicorn[standard]" python-multipart pandas
 copy .env.example .env                    # MODEL_PROVIDER=mock works with no keys
 
-# 1) Run a single investigation end-to-end (watch the agents work):
-python -m src.main --fixture structuring
-python -m src.main --fixture salary       # benign-but-flagged -> auto-cleared
-python -m src.main --fixture mule --consortium   # headline: cross-bank confirmation
+# 1) Investigate a real transaction file end-to-end (watch the agents work):
+python -m src.main examples\sample_transactions.csv
+python -m src.main your_ledger.xlsx --focus ACC1042   # one named account
+python -m src.main export.json --limit 3              # top-3 risk-triaged accounts
 
-# 2) The accuracy number (baseline vs AEGIS):
-python -m src.eval.harness --limit 40                 # synthetic sanity check
-python -m src.eval.harness --public --limit 200       # public benchmark (set PUBLIC_DATASET_PATH)
+# 2) The accuracy number (baseline vs AEGIS, externally-labelled public data):
+python -m src.eval.harness --public --limit 200       # bundled IBM AML slice / PUBLIC_DATASET_PATH
 
 # 3) The tests:
 python -m pytest tests/ -q
@@ -60,10 +59,11 @@ npm install
 npm run dev          # http://localhost:3000  (proxies /api/* to :8000)
 ```
 
-Pick a fixture, tick *cross-bank consortium*, press **Run investigation** and
-watch agents join, post cited evidence, get challenged, have claims rejected, and
-reach an auto-clear/escalate decision live. Then **Run accuracy eval** for the
-baseline-vs-AEGIS panel.
+Drop in a transaction file (CSV / Excel / JSON / text-based PDF — try
+`examples/sample_transactions.csv`), press **Run investigation** and watch the
+agents join, post cited evidence, get challenged, have claims rejected, and
+reach an auto-clear/escalate decision live — on *your* data. The **Benchmark**
+tab scores AEGIS against the externally-labelled IBM AML public dataset.
 
 ## 🔌 Switching on real models (optional)
 
@@ -78,7 +78,7 @@ Edit `.env`:
 
 Any tier whose key is missing falls back to Ollama automatically, so a partly-configured `.env` never crashes.
 
-Responses are cached on disk (`MODEL_CACHE=true`) so re-running a demo costs nothing.
+Responses are cached on disk (`MODEL_CACHE=true`) so re-running the same case costs nothing.
 The specialists' *real* signal (stats/graph/retrieval) works the same regardless of
 provider. With a reasoning key on, the **Challenger** additionally uses the model to
 propose case-specific *innocent explanations* (generalising the keyword list) — the
@@ -89,8 +89,8 @@ structural laundering evidence. Everything degrades to mock if a call fails.
 
 A small, balanced, **externally-labelled** slice of the **IBM AML** dataset ships
 with the repo (`src/data/benchmarks/ibm_sample.csv`), so the credible number
-works out-of-the-box — locally and on the deployed demo (the **"Run public
-benchmark (IBM AML)"** button). No download, no keys.
+works out-of-the-box — locally and on the deployed app (the **Benchmark** tab).
+No download, no keys.
 
 On this slice AEGIS catches **~93%** of laundering (vs ~90% baseline) while
 cutting false positives from **~31% → ~11%** (**~65% reduction**). Recall is
@@ -104,7 +104,7 @@ laundering. Provenance and method: [`src/data/benchmarks/README.md`](./src/data/
 > structure AEGIS detects.
 
 To score a **full** dataset yourself, point `.env` at a CSV and run
-`python -m src.eval.harness --public`:
+`python -m src.eval.harness`:
 
 | `PUBLIC_DATASET_KIND` | Dataset |
 |-----------------------|---------|
@@ -142,17 +142,21 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 | `src/feedback/` | human-decision capture + threshold tuning |
 | `src/data/` | case schema, synthetic generator, public-dataset loader |
 | `src/eval/` | baseline-vs-AEGIS accuracy harness |
-| `src/api/` | FastAPI backend + SSE live stream |
+| `src/api/` | FastAPI backend + NDJSON live investigation stream |
 | `dashboard/` | Next.js live investigation UI |
 
 ## 🎸 AEGIS on Band (live platform integration)
 
 AEGIS runs as a **remote agent on the Band platform** ([band.ai](https://band.ai)) —
-a compliance officer in a Band chatroom can @mention AEGIS and trigger a full
-investigation, with the governed result posted back into the shared room:
+a compliance officer in a Band chatroom can paste transaction rows, @mention
+AEGIS, and get the governed verdict posted back into the shared room:
 
 ```text
-@AEGIS investigate the mule fixture with the consortium check
+@AEGIS investigate these transactions
+from,to,amount,date,type
+a1,MULE-7,9400,2026-03-01 10:00,TRANSFER
+a2,MULE-7,9100,2026-03-01 11:00,TRANSFER
+...
 ```
 
 Setup (~5 min):
@@ -172,7 +176,7 @@ Setup (~5 min):
    python -m src.band.band_agent
    ```
 
-The internal pipeline still runs on the in-process mesh (`stub.py`) so the demo
+The internal pipeline still runs on the in-process mesh (`stub.py`) so the
 website works with zero keys; the Band agent is the door between Band rooms and
 that pipeline.
 
@@ -182,10 +186,11 @@ that pipeline.
   the internal agent-to-agent mesh remains the local, auditable `stub.py`.
 - **LangGraph** powers the verification trio as a real `StateGraph` when
   `USE_FRAMEWORKS=true` (runs offline, no keys); **CrewAI** wraps the specialist
-  crew (heavier, may need a key). The core also runs framework-agnostic so it's
-  always demoable, and each adapter degrades if its lib is absent. See
+  crew (heavier, may need a key). The core also runs framework-agnostic so it
+  always works offline, and each adapter degrades if its lib is absent. See
   `src/agents/frameworks/`.
-- **Synthetic eval numbers are a sanity check; the public-benchmark number is the
-  real one.** No real PII anywhere.
+- **Every verdict shown in the app is computed from data the user supplied**
+  (or, in the Benchmark tab, from a public externally-labelled dataset). There
+  are no canned demo cases. No real PII anywhere.
 
 Co-built with Claude Code.

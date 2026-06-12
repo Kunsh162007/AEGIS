@@ -63,7 +63,7 @@ def test_aegis_actually_engages_on_public_style_data(tmp_path):
 
 
 def test_bundled_ibm_benchmark_engages_and_does_not_worsen_fp():
-    """The committed IBM AML slice (powers the demo's 'public benchmark' button)
+    """The committed IBM AML slice (powers the dashboard's Benchmark tab)
     must let AEGIS catch laundering structure and never have MORE false positives
     than the size-only baseline. Guards the whole public-benchmark path."""
     path = bundled_sample_path("ibm")

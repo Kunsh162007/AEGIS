@@ -1,7 +1,7 @@
 """The LLM-driven Challenger (AI/ML API reasoning tier) must: propose an innocent
 explanation when a real model is configured, clear a soft profile anomaly with
 it, NEVER clear structural laundering evidence, and stay completely inert in mock
-mode (so the offline demo is unchanged)."""
+mode (so the offline path is unchanged)."""
 from __future__ import annotations
 
 from datetime import datetime
