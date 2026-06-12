@@ -14,14 +14,16 @@ from pathlib import Path
 
 import os
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from ..band.interface import AuditEvent
+from ..casework import get_department
+from ..config import settings
 from ..eval.harness import evaluate
-from ..orchestrator import Orchestrator
 
 app = FastAPI(title="AEGIS", version="0.2.0")
 # In production the dashboard is served from this same origin (mount below), so
@@ -32,6 +34,13 @@ _cors_origins = [o.strip() for o in os.getenv(
     "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_methods=["*"],
                    allow_headers=["*"])
+
+
+def require_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Optional production auth (§config.api_key): when AEGIS_API_KEY is set,
+    every state-changing endpoint demands a matching X-API-Key header."""
+    if settings.api_key and x_api_key != settings.api_key:
+        raise HTTPException(401, "Missing or invalid X-API-Key.")
 
 
 def _event_dict(ev: AuditEvent) -> dict:
@@ -80,31 +89,38 @@ def _result_dict(case, result) -> dict:
     }
 
 
-@app.post("/api/analyze")
+@app.post("/api/analyze", dependencies=[Depends(require_key)])
 async def analyze_upload(file: UploadFile = File(...), focus: str = "",
                          limit: int = 5) -> dict:
     """Bring-your-own-data: upload a transaction file (CSV / Excel / JSON /
     text-based PDF) and AEGIS investigates the highest-risk accounts in it (or
     the one named in `focus`). The file is parsed in memory only — never
     stored. No labels are involved; this is real inference on the caller's
-    data. Accounts are investigated in parallel."""
+    data. Accounts are investigated in parallel, and every verdict is filed in
+    the department casebook for the Command Center review queue."""
     from concurrent.futures import ThreadPoolExecutor
 
     cases = await _cases_from_request(file, focus, limit)
+    filename = file.filename or "upload.csv"
+    dept = get_department()
 
     def _one(case) -> dict:
-        return _result_dict(case, Orchestrator().investigate(case))
+        result = dept.orchestrator().investigate(case)
+        row = dept.record_case(case, result, source_file=filename)
+        d = _result_dict(case, result)
+        d["case"] = {k: row[k] for k in ("uid", "priority", "sla_due", "status")}
+        return d
 
     def _run() -> list[dict]:
         with ThreadPoolExecutor(max_workers=min(4, len(cases))) as pool:
             return list(pool.map(_one, cases))
 
     results = await asyncio.to_thread(_run)
-    return {"filename": file.filename, "accounts_analyzed": len(results),
+    return {"filename": filename, "accounts_analyzed": len(results),
             "results": results}
 
 
-@app.post("/api/analyze/stream")
+@app.post("/api/analyze/stream", dependencies=[Depends(require_key)])
 async def analyze_upload_stream(file: UploadFile = File(...), focus: str = "",
                                 limit: int = 5):
     """Same as /api/analyze but streams NDJSON so the dashboard can show the
@@ -130,11 +146,15 @@ async def analyze_upload_stream(file: UploadFile = File(...), focus: str = "",
             "filename": filename,
             "accounts": [{"account": c.focus_account, "alert_type": c.alert_type,
                           "transactions": len(c.transactions)} for c in cases]}})
+        dept = get_department()
         results = []
         for case in cases:
             result = await asyncio.to_thread(
-                Orchestrator().investigate, case, None, on_event)
+                dept.orchestrator().investigate, case, None, on_event)
+            row = await asyncio.to_thread(
+                dept.record_case, case, result, filename)
             r = _result_dict(case, result)
+            r["case"] = {k: row[k] for k in ("uid", "priority", "sla_due", "status")}
             results.append(r)
             await queue.put({"kind": "account_result", "payload": r})
         await queue.put({"kind": "done", "payload": {
@@ -151,6 +171,66 @@ async def analyze_upload_stream(file: UploadFile = File(...), focus: str = "",
         await task
 
     return StreamingResponse(ndjson(), media_type="application/x-ndjson")
+
+
+# ── The Command Center: case desk, operations, intelligence ─────────────────
+# Everything below reads ONLY the department casebook, which is populated by
+# real analyses (uploads / CLI) — there is no fixture path.
+
+@app.get("/api/cases")
+async def list_cases(status: str = "", limit: int = 100) -> dict:
+    """The case queue, highest priority first. Filter with
+    ?status=pending_review|auto_cleared|confirmed_suspicious|dismissed_false_positive."""
+    dept = get_department()
+    rows = await asyncio.to_thread(dept.store.list, status or None, limit)
+    return {"cases": rows, "count": len(rows)}
+
+
+@app.get("/api/cases/{uid}")
+async def get_case(uid: str) -> dict:
+    dept = get_department()
+    row = await asyncio.to_thread(dept.store.get, uid)
+    if row is None:
+        raise HTTPException(404, f"No case {uid} in the casebook.")
+    return row
+
+
+class DecisionBody(BaseModel):
+    decision: str  # "confirm" (suspicious) | "dismiss" (false positive)
+
+
+@app.post("/api/cases/{uid}/decision", dependencies=[Depends(require_key)])
+async def decide_case(uid: str, body: DecisionBody) -> dict:
+    """The human compliance officer's gate. One decision does three things:
+    closes the case, tunes the autonomy thresholds, and files the reviewed
+    precedent into the knowledge base for future investigations."""
+    dept = get_department()
+    try:
+        return await asyncio.to_thread(dept.decide, uid, body.decision)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/operations")
+async def operations() -> dict:
+    """Department KPIs — auto-clear rate, pending/overdue reviews, QA average,
+    estimated analyst-hours saved (assumptions stated in the payload), and the
+    current learned policy thresholds with recent feedback history."""
+    return await asyncio.to_thread(get_department().operations)
+
+
+@app.get("/api/intel/briefing")
+async def intel_briefing() -> dict:
+    """The Strategic Intelligence agent's cross-case briefing: emerging
+    typologies, repeat subjects, counterparties bridging separate
+    investigations, and consortium-ready abstract pattern descriptors."""
+    from ..agents.strategic_intel import StrategicIntelAgent
+
+    dept = get_department()
+    rows = await asyncio.to_thread(dept.store.list, None, 500)
+    return StrategicIntelAgent().brief(rows)
 
 
 @app.get("/api/health")

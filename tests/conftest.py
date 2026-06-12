@@ -5,3 +5,5 @@ Set before src.config is imported (it reads the environment at import time).
 import os
 
 os.environ["MODEL_PROVIDER"] = "mock"
+# Keep the department casebook in memory so tests never touch a real DB file.
+os.environ["AEGIS_DB_PATH"] = ":memory:"

@@ -24,6 +24,7 @@ from .agents.frameworks import crew_specialists, langgraph_verification
 from .agents.identity_kyc import IdentityKycAgent
 from .agents.intake import IntakeAgent
 from .agents.network_graph import NetworkGraphAgent
+from .agents.quality_auditor import QualityAuditorAgent
 from .agents.report_tooling import ReportAgent
 from .agents.transaction_pattern import TransactionPatternAgent
 from .agents.verifier import VerifierAgent
@@ -62,6 +63,7 @@ class Orchestrator:
         self.adjudicator = AdjudicatorAgent(self.model, policy=self.policy)
         self.report = ReportAgent(self.model)
         self.liaison = ConsortiumLiaisonAgent(self.model)
+        self.qa = QualityAuditorAgent(self.model)
 
     def _make_specialists(self, roles: list[str]):
         agents = []
@@ -109,7 +111,12 @@ class Orchestrator:
             result = self.adjudicator.adjudicate(case, evidence, challenge, rejected, room,
                                                  consortium_note=consortium_note)
 
-        # 7) Escalated cases get a drafted, evidence-cited SAR; human gate requested.
+        # 7) QA audit — the supervisory control. Audits the process (citations,
+        #    challenge, verdict-evidence consistency) and blocks any auto-clear
+        #    that fails a critical check.
+        result = self.qa.audit(case, result, room)
+
+        # 8) Escalated cases get a drafted, evidence-cited SAR; human gate requested.
         if result.decision == Decision.ESCALATE:
             room.request_human_gate({"case_id": case.case_id,
                                      "verdict": result.verdict.value,

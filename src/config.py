@@ -33,6 +33,12 @@ class Settings:
     cache_enabled: bool = _bool("MODEL_CACHE", True)
     cache_dir: Path = ROOT / ".cache"
 
+    # The department casebook (SQLite). ":memory:" gives an ephemeral store.
+    db_path: str = os.getenv("AEGIS_DB_PATH", str(ROOT / ".cache" / "aegis.db")).strip()
+    # Optional production auth: when set, state-changing API endpoints require
+    # an X-API-Key header carrying this value. Unset (default) = open.
+    api_key: str = os.getenv("AEGIS_API_KEY", "").strip()
+
     # Public benchmark dataset (Section 9)
     public_dataset_path: str = os.getenv("PUBLIC_DATASET_PATH", "").strip()
     public_dataset_kind: str = os.getenv("PUBLIC_DATASET_KIND", "paysim").strip().lower()

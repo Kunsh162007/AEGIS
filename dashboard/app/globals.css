@@ -98,3 +98,29 @@ button.ghost { background: transparent; }
 .chip.amber { border-color: var(--amber); color: var(--amber); }
 .chip.green { border-color: var(--green); color: var(--green); }
 .footer { color: var(--muted); font-size: 12px; margin-top: 26px; text-align: center; }
+
+/* ── command center ─────────────────────────────────────────────────────── */
+.metrics.kpis { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1000px) { .metrics.kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) { .metrics.kpis { grid-template-columns: repeat(2, 1fr); } }
+.toast { background: rgba(124,92,255,0.12); border: 1px solid var(--accent);
+  border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px;
+  animation: fade 0.3s ease; }
+.qcase { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px;
+  background: var(--panel2); overflow: hidden; }
+.qrow { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+.qmain { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
+.prio { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+  white-space: nowrap; }
+.prio.hi { background: rgba(255,92,92,0.15); color: var(--red); border: 1px solid var(--red); }
+.prio.mid { background: rgba(255,176,32,0.15); color: var(--amber); border: 1px solid var(--amber); }
+.prio.lo { background: rgba(141,162,192,0.12); color: var(--muted); border: 1px solid var(--border); }
+button.confirm { background: rgba(255,92,92,0.12); border-color: var(--red); color: var(--red);
+  font-weight: 600; }
+button.dismiss { background: rgba(46,204,113,0.12); border-color: var(--green); color: var(--green);
+  font-weight: 600; }
+.qdetail { padding: 10px 12px; border-top: 1px solid var(--border); }
+.sar { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; font-size: 11px; color: var(--muted); white-space: pre-wrap;
+  max-height: 240px; overflow-y: auto; }
+.filed { font-size: 12px; color: var(--blue); margin-top: 8px; }

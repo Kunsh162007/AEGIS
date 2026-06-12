@@ -82,6 +82,10 @@ class CaseResult(BaseModel):
     rejected_claims: list[str] = Field(default_factory=list)
     consortium_confirmation: Optional[str] = None
     report: str = ""
+    # Set by the Quality Auditor agent — the supervisory control every real
+    # FIU staffs. An auto-clear that fails a critical QA check is overridden.
+    qa_score: Optional[float] = None
+    qa_findings: list[str] = Field(default_factory=list)
 
     def verified_evidence(self) -> list[Evidence]:
         return [e for e in self.evidence if e.verified]

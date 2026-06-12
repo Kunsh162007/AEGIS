@@ -7,8 +7,47 @@ type Result = {
   evidence: { agent: string; claim: string; source: string; verified: boolean | null; confidence: number | null; supports: string }[];
   rejected_claims: string[]; consortium_confirmation: string | null; report: string;
 };
-type AccountResult = { account: string; alert_type: string; transactions: number; result: Result & { case_id: string } };
+type AccountResult = {
+  account: string; alert_type: string; transactions: number;
+  result: Result & { case_id: string; qa_score: number | null; qa_findings: string[] };
+  case?: { uid: string; priority: number; sla_due: string | null; status: string };
+};
 type Plan = { filename: string; accounts: { account: string; alert_type: string; transactions: number }[] };
+type CaseRow = {
+  uid: string; created_at: string; source_file: string; account: string; alert_type: string;
+  txn_count: number; exposure: number; verdict: string; confidence: number; status: string;
+  priority: number; sla_due: string | null; qa_score: number | null; counterparties: string[];
+  officer_decision: string | null;
+};
+type CaseDetail = CaseRow & { result: Result & { qa_score: number | null; qa_findings: string[] } };
+type Ops = {
+  cases_total: number; auto_cleared: number; pending_review: number;
+  confirmed_suspicious: number; dismissed_false_positive: number; overdue_reviews: number;
+  auto_clear_rate: number; avg_qa_score: number | null; analyst_hours_saved: number;
+  workload_assumptions: { manual_minutes_per_alert: number; review_minutes_with_aegis: number };
+  policy: { clear_confidence: number; escalate_suspicion_floor: number };
+  recent_feedback: { ts: string; case_uid: string; officer_decision: string; agreed: boolean;
+    clear_confidence_before: number; clear_confidence_after: number }[];
+};
+type Briefing = {
+  cases_reviewed: number; cases_flagged: number; headline: string;
+  emerging_typologies: { typology: string; cases: number }[];
+  repeat_subjects: { account: string; case_uids: string[] }[];
+  cross_case_links: { counterparty: string; links_cases: string[]; also_under_investigation: boolean }[];
+  shareable_patterns: { typology: string; cases: number; scope: string }[];
+};
+
+// Optional production auth: if an API key was stored (localStorage "aegis_api_key"),
+// attach it; otherwise requests go out plain (the default open mode).
+function apiHeaders(): Record<string, string> {
+  const k = typeof window !== "undefined" ? localStorage.getItem("aegis_api_key") : null;
+  return k ? { "X-API-Key": k } : {};
+}
+
+function hoursLeft(iso: string | null): number | null {
+  if (!iso) return null;
+  return (new Date(iso).getTime() - Date.now()) / 3_600_000;
+}
 type EvalR = {
   dataset?: string;
   baseline: { false_positive_rate: number; recall_catch_rate: number; false_positives: number };
@@ -21,10 +60,66 @@ const KIND_TAG: Record<string, string> = {
   consortium: "🤝", verdict: "⚖️", gate: "🧑‍⚖️", clear: "🟢", plan: "📋", room_opened: "📂",
 };
 
-type Tab = "analyze" | "benchmark";
+type Tab = "analyze" | "command" | "benchmark";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("analyze");
+
+  // ── command center: queue + KPIs + intelligence (one human, whole desk) ──
+  const [ops, setOps] = useState<Ops | null>(null);
+  const [queue, setQueue] = useState<CaseRow[]>([]);
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
+  const [openCase, setOpenCase] = useState<CaseDetail | null>(null);
+  const [deciding, setDeciding] = useState("");
+  const [lastAction, setLastAction] = useState("");
+  const [cmdErr, setCmdErr] = useState("");
+
+  async function loadCommand() {
+    setCmdErr("");
+    try {
+      const [o, q, b] = await Promise.all([
+        fetch("/api/operations").then((r) => r.json()),
+        fetch("/api/cases?status=pending_review").then((r) => r.json()),
+        fetch("/api/intel/briefing").then((r) => r.json()),
+      ]);
+      setOps(o); setQueue(q.cases); setBriefing(b);
+    } catch (e: any) {
+      setCmdErr(String(e.message || e));
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "command") loadCommand();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function viewCase(uid: string) {
+    if (openCase?.uid === uid) { setOpenCase(null); return; }
+    const r = await fetch(`/api/cases/${encodeURIComponent(uid)}`);
+    if (r.ok) setOpenCase(await r.json());
+  }
+
+  async function decideCase(uid: string, decision: "confirm" | "dismiss") {
+    setDeciding(uid); setCmdErr("");
+    try {
+      const r = await fetch(`/api/cases/${encodeURIComponent(uid)}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiHeaders() },
+        body: JSON.stringify({ decision }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.detail || `decision failed (${r.status})`);
+      setLastAction(
+        `${uid}: ${decision === "confirm" ? "confirmed suspicious" : "dismissed as false positive"}` +
+        ` — auto-clear bar ${body.clear_confidence_before} → ${body.clear_confidence_after}` +
+        ` (the system just learned from you)`);
+      if (openCase?.uid === uid) setOpenCase(null);
+      await loadCommand();
+    } catch (e: any) {
+      setCmdErr(String(e.message || e));
+    } finally {
+      setDeciding("");
+    }
+  }
 
   // ── analyze (the product): upload -> live investigation -> verdicts ──────
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -49,7 +144,7 @@ export default function Home() {
     fd.append("file", uploadFile);
     const qs = uploadFocus.trim() ? `?focus=${encodeURIComponent(uploadFocus.trim())}` : "";
     try {
-      const r = await fetch(`/api/analyze/stream${qs}`, { method: "POST", body: fd });
+      const r = await fetch(`/api/analyze/stream${qs}`, { method: "POST", body: fd, headers: apiHeaders() });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
         throw new Error(body.detail || `analysis failed (${r.status})`);
@@ -146,12 +241,15 @@ export default function Home() {
             <div className="tagline">Financial-Crime Investigation Mesh</div>
           </div>
         </div>
-        <span className="badge">10 governed agents · evidence-verified verdicts</span>
+        <span className="badge">12 governed agents · evidence-verified verdicts · one-human ops</span>
       </header>
 
       <nav className="tabs">
         <button className={`tab ${tab === "analyze" ? "active" : ""}`} onClick={() => setTab("analyze")}>
           Analyze
+        </button>
+        <button className={`tab ${tab === "command" ? "active" : ""}`} onClick={() => setTab("command")}>
+          Command Center
         </button>
         <button className={`tab ${tab === "benchmark" ? "active" : ""}`} onClick={() => setTab("benchmark")}>
           Benchmark
@@ -250,6 +348,12 @@ export default function Home() {
                             {r.result.decision === "auto_clear" ? "🟢 Auto-cleared" : "🧑‍⚖️ Escalated for human review"}
                             <br />{r.result.rationale}
                           </div>
+                          {r.case && (
+                            <div className="filed">
+                              📁 Filed as <b>{r.case.uid}</b> · priority {r.case.priority}
+                              {r.case.status === "pending_review" && " · waiting in the Command Center queue"}
+                            </div>
+                          )}
                         </div>
                         {v.map((e, j) => (
                           <div className="evi" key={j}>{e.claim}<br />
@@ -264,6 +368,145 @@ export default function Home() {
                 </div>
               </div>
             </>
+          )}
+        </>
+      )}
+
+      {/* ════════ COMMAND CENTER ════════ */}
+      {tab === "command" && (
+        <>
+          {cmdErr && <div className="error">⚠ {cmdErr}</div>}
+          {lastAction && <div className="toast">🧠 {lastAction}</div>}
+
+          {ops && (
+            <div className="metrics kpis">
+              <div className="metric"><div className="big">{ops.cases_total}</div><div className="lbl">cases on file</div></div>
+              <div className="metric"><div className="big" style={{ color: "var(--green)" }}>{(ops.auto_clear_rate * 100).toFixed(0)}%</div><div className="lbl">auto-cleared by the agents</div></div>
+              <div className="metric"><div className="big" style={{ color: ops.overdue_reviews ? "var(--red)" : "var(--amber)" }}>{ops.pending_review}</div><div className="lbl">awaiting your decision{ops.overdue_reviews ? ` · ${ops.overdue_reviews} overdue` : ""}</div></div>
+              <div className="metric"><div className="big" style={{ color: "var(--blue)" }}>{ops.analyst_hours_saved}h</div><div className="lbl">analyst-hours saved*</div></div>
+              <div className="metric"><div className="big">{ops.avg_qa_score !== null ? (ops.avg_qa_score * 100).toFixed(0) + "%" : "—"}</div><div className="lbl">avg QA score</div></div>
+              <div className="metric"><div className="big" style={{ color: "var(--accent)" }}>{ops.policy.clear_confidence}</div><div className="lbl">auto-clear bar (learned)</div></div>
+            </div>
+          )}
+          {ops && (
+            <div className="finehint" style={{ marginTop: 6 }}>
+              *assumes {ops.workload_assumptions.manual_minutes_per_alert} min of manual L1+L2 work per alert vs{" "}
+              {ops.workload_assumptions.review_minutes_with_aegis} min to review an AEGIS-prepared case — the
+              assumption is part of the API payload, not hidden.
+            </div>
+          )}
+
+          {ops && ops.cases_total === 0 && (
+            <div className="panel" style={{ marginTop: 14 }}>
+              <h2>The casebook is empty</h2>
+              <div className="sub" style={{ margin: 0 }}>
+                Run an investigation on the Analyze tab (or via the CLI) — every verdict files itself
+                here as a case: auto-cleared ones for the record, escalated ones into your review queue.
+                Nothing in this view is canned.
+              </div>
+            </div>
+          )}
+
+          {ops && ops.cases_total > 0 && (
+            <div className="grid" style={{ marginTop: 14 }}>
+              <div className="panel">
+                <h2>Review queue — sorted by priority, SLA clocks running</h2>
+                {queue.length === 0 && <div className="sub" style={{ margin: 0 }}>Queue clear. The agents are handling everything that doesn&apos;t need you.</div>}
+                {queue.map((c) => {
+                  const left = hoursLeft(c.sla_due);
+                  const open = openCase?.uid === c.uid;
+                  return (
+                    <div className="qcase" key={c.uid}>
+                      <div className="qrow">
+                        <span className={`prio ${c.priority >= 75 ? "hi" : c.priority >= 50 ? "mid" : "lo"}`}>P{c.priority}</span>
+                        <div className="qmain">
+                          <div><b>{c.account}</b> · {c.verdict} (conf {c.confidence}) · {c.alert_type}</div>
+                          <div className="src">
+                            {c.uid} · ${c.exposure.toLocaleString()} exposure · {c.txn_count} txns · from {c.source_file || "CLI"}
+                            {left !== null && (
+                              <span style={{ color: left < 0 ? "var(--red)" : left < 24 ? "var(--amber)" : undefined }}>
+                                {" "}· {left < 0 ? `OVERDUE ${Math.abs(left).toFixed(0)}h` : `due in ${left.toFixed(0)}h`}
+                              </span>
+                            )}
+                            {c.qa_score !== null && c.qa_score < 1 && <span style={{ color: "var(--amber)" }}> · QA {(c.qa_score * 100).toFixed(0)}%</span>}
+                          </div>
+                        </div>
+                        <button className="ghost" onClick={() => viewCase(c.uid)}>{open ? "Hide" : "Evidence"}</button>
+                        <button className="confirm" disabled={deciding === c.uid} onClick={() => decideCase(c.uid, "confirm")}>Confirm</button>
+                        <button className="dismiss" disabled={deciding === c.uid} onClick={() => decideCase(c.uid, "dismiss")}>Dismiss</button>
+                      </div>
+                      {open && openCase && (
+                        <div className="qdetail">
+                          {openCase.result.evidence.filter((e) => e.verified).map((e, j) => (
+                            <div className="evi" key={j}>{e.claim}<br /><span className="src">{e.agent} · {e.source} · conf {e.confidence}</span></div>
+                          ))}
+                          {openCase.result.rejected_claims.length > 0 && (
+                            <div className="evi rej">Verifier rejected {openCase.result.rejected_claims.length} claim(s)</div>
+                          )}
+                          {openCase.result.qa_findings.length > 0 && (
+                            <div className="evi" style={{ borderLeftColor: "var(--amber)" }}>
+                              QA findings: {openCase.result.qa_findings.join("; ")}
+                            </div>
+                          )}
+                          {openCase.result.report && <pre className="sar">{openCase.result.report}</pre>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <div className="panel" style={{ marginBottom: 16 }}>
+                  <h2>Strategic intelligence — across the whole casebook</h2>
+                  {briefing && (
+                    <>
+                      <div className="sub" style={{ marginBottom: 10 }}>{briefing.headline}</div>
+                      {briefing.emerging_typologies.length > 0 && (
+                        <div className="summary" style={{ marginTop: 0 }}>
+                          {briefing.emerging_typologies.map((t) => (
+                            <div className="chip amber" key={t.typology}>{t.typology} ×{t.cases}</div>
+                          ))}
+                        </div>
+                      )}
+                      {briefing.cross_case_links.map((l, i) => (
+                        <div className="evi" key={i} style={{ borderLeftColor: "var(--accent)" }}>
+                          <b>{l.counterparty}</b> bridges {l.links_cases.length} separate investigations
+                          {l.also_under_investigation && " — and is itself under investigation"}
+                          <br /><span className="src">{l.links_cases.join(" · ")}</span>
+                        </div>
+                      ))}
+                      {briefing.repeat_subjects.map((s, i) => (
+                        <div className="evi" key={`r${i}`} style={{ borderLeftColor: "var(--amber)" }}>
+                          repeat subject <b>{s.account}</b> — {s.case_uids.length} cases
+                        </div>
+                      ))}
+                      {briefing.shareable_patterns.length > 0 && (
+                        <div className="consortium">
+                          <b>Consortium-ready descriptors</b> (this is ALL that would cross to peer banks):
+                          {briefing.shareable_patterns.map((p, i) => (
+                            <div className="mono" key={i}>{JSON.stringify(p)}</div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="panel">
+                  <h2>Learning loop — every decision retunes the autonomy policy</h2>
+                  {ops.recent_feedback.length === 0 && (
+                    <div className="sub" style={{ margin: 0 }}>No human decisions yet. Decide a queued case and watch the auto-clear bar move.</div>
+                  )}
+                  {ops.recent_feedback.map((f, i) => (
+                    <div className="evi" key={i} style={{ borderLeftColor: f.agreed ? "var(--green)" : "var(--amber)" }}>
+                      {f.case_uid}: officer said <b>{f.officer_decision}</b> ({f.agreed ? "agents agreed" : "agents corrected"})
+                      <br /><span className="src">auto-clear bar {f.clear_confidence_before} → {f.clear_confidence_after}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
         </>
       )}

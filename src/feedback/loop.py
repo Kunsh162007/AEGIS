@@ -39,6 +39,7 @@ class FeedbackLoop:
         entry = {"case_id": result.case_id, "agreed": agreed,
                  "officer_decision": officer_decision.value,
                  "clear_confidence_before": round(before, 3),
-                 "clear_confidence_after": round(self.policy.clear_confidence, 3)}
+                 "clear_confidence_after": round(self.policy.clear_confidence, 3),
+                 "precedent": precedent}
         self.history.append(entry)
         return entry

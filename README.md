@@ -18,7 +18,17 @@
   Network agent runs a real NetworkX graph (mule hubs, cycles), the External
   Intelligence agent runs retrieval. The LLM only narrates.
 - **Risk-based autonomy.** An explicit, auditable policy auto-clears
-  confidently-benign cases and escalates the rest.
+  confidently-benign cases and escalates the rest — and a **Quality Auditor
+  agent** re-audits every finished investigation and *blocks* any auto-clear
+  that fails a critical control.
+- **A whole department, not a request handler.** Every verdict is filed in a
+  persistent casebook with a priority score and an SLA clock; a **Strategic
+  Intelligence agent** reads across all cases to find what no single
+  investigation can see (recurring typologies, one counterparty quietly
+  bridging separate cases). One human runs it all from the **Command Center**.
+- **A real learning loop.** Every officer decision tunes the autonomy
+  thresholds and files reviewed precedent — both persisted, both reloaded on
+  restart, both visible on screen as they move.
 - **Measured accuracy on a public benchmark** (PaySim / IBM AML / Elliptic) —
   not a self-graded number.
 - **Governed + auditable on Band**, with credential traversal and a human gate.
@@ -64,6 +74,33 @@ Drop in a transaction file (CSV / Excel / JSON / text-based PDF — try
 agents join, post cited evidence, get challenged, have claims rejected, and
 reach an auto-clear/escalate decision live — on *your* data. The **Benchmark**
 tab scores AEGIS against the externally-labelled IBM AML public dataset.
+
+## 🧑‍✈️ Command Center — one human runs the whole department
+
+Every investigation files itself into a persistent **casebook** (SQLite —
+`AEGIS_DB_PATH`, default `.cache/aegis.db`). The **Command Center** tab is the
+single operator's cockpit over it:
+
+- **KPIs**: cases on file, auto-clear rate, pending/overdue reviews, average
+  QA score, and **estimated analyst-hours saved** — with the workload
+  assumptions printed next to the number, not hidden behind it.
+- **Review queue**: escalated cases sorted by priority, each with an SLA
+  countdown, the verified evidence chain, the QA findings, the draft
+  FinCEN-style SAR, and two buttons: **Confirm** / **Dismiss**.
+- **The learning loop, on screen**: each decision visibly moves the
+  auto-clear bar (`0.6 → 0.58`) and files reviewed precedent the agents
+  retrieve on similar future cases. Both survive a restart.
+- **Strategic intelligence**: the cross-case agent's briefing — emerging
+  typologies, repeat subjects, counterparties bridging otherwise separate
+  investigations, and the consortium-ready *abstract* pattern descriptors
+  shown verbatim (so "no data crossed" is provable, §7).
+
+API surface: `GET /api/cases`, `GET /api/cases/{uid}`,
+`POST /api/cases/{uid}/decision` (`{"decision": "confirm"|"dismiss"}`),
+`GET /api/operations`, `GET /api/intel/briefing`. Set `AEGIS_API_KEY` to
+require an `X-API-Key` header on all state-changing endpoints (open by default
+for local/demo use; the dashboard picks a key up from
+`localStorage["aegis_api_key"]`).
 
 ## 🔌 Switching on real models (optional)
 
@@ -123,8 +160,12 @@ alert → Intake opens a Band room + recruits specialists by alert type
       → Verifier audits every claim (rejects uncited / rebutted)
       → Consortium Liaison asks peer banks about the ABSTRACT pattern only
       → Adjudicator: verdict + confidence + autonomy decision
+      → Quality Auditor re-audits the process (blocks unsafe auto-clears)
       → auto-clear (logged) OR escalate → Report agent drafts the SAR
       → every step is a governed audit event, streamed live to the dashboard
+      → the verdict is FILED in the casebook: priority, SLA clock, review queue
+      → the officer decides from the Command Center → thresholds retune,
+        precedent is stored → Strategic Intelligence briefs across all cases
 ```
 
 See `src/` for one module per concern and `src/agents/` for one module per agent.
@@ -133,7 +174,8 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 
 | Path | What |
 |------|------|
-| `src/agents/` | the 10-agent roster (specialists + verification trio + consortium + report) |
+| `src/agents/` | the 12-agent roster (specialists + verification trio + consortium + report + **quality auditor** + **strategic intelligence**) |
+| `src/casework/` | the department layer: persistent casebook (SQLite), priority/SLA model, shared learned state |
 | `src/band/` | Band layer: abstract `interface.py` + in-process `stub.py` + **`band_agent.py` (live agent on the real Band platform)** |
 | `src/models/` | unified AI/ML API + Featherless + Ollama + mock client, with caching |
 | `src/graph/` | NetworkX entity graph (mule hubs, cycles) |

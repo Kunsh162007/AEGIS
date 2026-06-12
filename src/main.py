@@ -18,9 +18,9 @@ except Exception:
     pass
 
 from .band.interface import AuditEvent
+from .casework import get_department
 from .data.user_upload import cases_from_upload
 from .models.client import TOKEN_LEDGER
-from .orchestrator import Orchestrator
 
 
 def _print_event(ev: AuditEvent) -> None:
@@ -52,16 +52,23 @@ def main() -> None:
     except ValueError as exc:
         raise SystemExit(f"Could not parse {path.name}: {exc}")
 
+    dept = get_department()
     print(f"\n{path.name}: {len(cases)} account(s) selected by risk triage")
     for case in cases:
         print(f"\n=== AEGIS investigating {case.focus_account} "
               f"({case.alert_type}, {len(case.transactions)} txns) ===\n")
-        result = Orchestrator().investigate(case, on_event=_print_event)
+        result = dept.orchestrator().investigate(case, on_event=_print_event)
+        row = dept.record_case(case, result, source_file=path.name)
 
         print("\n--- VERDICT ---")
         print(f"  Verdict:    {result.verdict.value}  (confidence {result.confidence})")
         print(f"  Decision:   {result.decision.value}")
         print(f"  Rationale:  {result.rationale}")
+        print(f"  Casebook:   filed as {row['uid']} · priority {row['priority']}"
+              + (f" · review due {row['sla_due'][:16]}" if row["sla_due"] else ""))
+        if result.qa_findings:
+            print(f"  QA:         score {result.qa_score} — "
+                  + "; ".join(result.qa_findings))
         if result.rejected_claims:
             print(f"  Rejected:   {len(result.rejected_claims)} claim(s) during verification")
         if result.consortium_confirmation:
