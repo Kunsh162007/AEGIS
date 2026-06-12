@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from pydantic import BaseModel
 from ..band.interface import AuditEvent
 from ..casework import get_department
 from ..config import settings
-from ..eval.harness import evaluate
+from ..data.schema import Verdict
 
 app = FastAPI(title="AEGIS", version="0.2.0")
 # In production the dashboard is served from this same origin (mount below), so
@@ -48,20 +49,6 @@ def _event_dict(ev: AuditEvent) -> dict:
             "kind": ev.kind, "authority": ev.authority, "payload": ev.payload}
 
 
-@app.get("/api/eval/public")
-async def run_eval_public(limit: int = 200) -> dict:
-    """Baseline-vs-AEGIS on a bundled slice of a PUBLIC benchmark (IBM AML,
-    HI-Small) with externally-authored labels — the credible number (§9). Falls
-    back to a clear message if the sample isn't bundled."""
-    from ..data.public_loader import bundled_sample_path, load_public
-
-    path = bundled_sample_path("ibm")
-    if not path:
-        return {"error": "no bundled public benchmark sample available"}
-    cases = await asyncio.to_thread(load_public, path, "generic", limit)
-    return await asyncio.to_thread(evaluate, cases, "public:ibm-aml-sample")
-
-
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB covers sizeable ledger exports
 
 
@@ -80,12 +67,54 @@ async def _cases_from_request(file: UploadFile, focus: str, limit: int):
         raise HTTPException(422, str(exc)) from exc
 
 
+def _flagged_transactions(case, result) -> dict[str, list[str]]:
+    """Map txn_id -> reasons, parsed from the VERIFIED suspicious evidence's
+    citations — this is how the suspicious areas of the user's own dataset get
+    marked row by row. Bracketed ids cite transactions directly; account
+    citations like txn:inbound(ACC) flag the transactions touching that
+    account."""
+    txn_ids = {t.txn_id for t in case.transactions}
+    flags: dict[str, list[str]] = {}
+
+    def _mark(tid: str, reason: str) -> None:
+        flags.setdefault(tid, [])
+        if reason not in flags[tid]:
+            flags[tid].append(reason)
+
+    for e in result.verified_evidence():
+        if e.supports != Verdict.SUSPICIOUS:
+            continue
+        reason = f"{e.agent}: {e.claim}"
+        cited = False
+        for chunk in re.findall(r"\[([^\]]+)\]", e.source):
+            for part in chunk.split(","):
+                tid = part.strip()
+                if tid in txn_ids:
+                    _mark(tid, reason)
+                    cited = True
+        if cited or not e.source.startswith(("txn:", "graph:")):
+            continue
+        # Account-level citation: flag the focus account's flows with that party.
+        for acct in re.findall(r"\(([^)]+)\)", e.source):
+            for t in case.transactions:
+                if acct in (t.src_account, t.dst_account) and \
+                        case.focus_account in (t.src_account, t.dst_account):
+                    _mark(t.txn_id, reason)
+    return flags
+
+
 def _result_dict(case, result) -> dict:
     return {
         "account": case.focus_account,
         "alert_type": case.alert_type,
         "transactions": len(case.transactions),
         "result": json.loads(result.model_dump_json()),
+        # The case's transaction rows + which of them are flagged and why —
+        # lets the UI mark the suspicious areas of the uploaded dataset itself.
+        "txns": [{"txn_id": t.txn_id, "src": t.src_account, "dst": t.dst_account,
+                  "amount": t.amount, "ts": t.timestamp.isoformat(),
+                  "channel": t.channel} for t in case.transactions],
+        "flagged_txns": _flagged_transactions(case, result),
     }
 
 
@@ -225,12 +254,106 @@ async def operations() -> dict:
 async def intel_briefing() -> dict:
     """The Strategic Intelligence agent's cross-case briefing: emerging
     typologies, repeat subjects, counterparties bridging separate
-    investigations, and consortium-ready abstract pattern descriptors."""
+    investigations, consortium-ready abstract descriptors — and any
+    potentially NOVEL patterns (suspicious structure matching no library
+    typology)."""
     from ..agents.strategic_intel import StrategicIntelAgent
+    from ..casework.patterns import looks_novel
 
     dept = get_department()
     rows = await asyncio.to_thread(dept.store.list, None, 500)
-    return StrategicIntelAgent().brief(rows)
+    briefing = StrategicIntelAgent().brief(rows)
+
+    flagged = {r["uid"]: r for r in rows if r["verdict"] in ("suspicious", "uncertain")}
+    briefing["novel_patterns"] = [
+        {"case_uid": p["case_uid"], "account": p["account"],
+         "signature": p["signature"], "outcome": p["outcome"]}
+        for p in await asyncio.to_thread(dept.store.list_patterns)
+        if p["case_uid"] in flagged and looks_novel(p["signature"])]
+    return briefing
+
+
+# ── The chat analyst: grounded Q&A over the org's data and cases ─────────────
+
+class ChatBody(BaseModel):
+    question: str
+
+
+@app.post("/api/chat", dependencies=[Depends(require_key)])
+async def chat(body: ChatBody) -> dict:
+    """Ask AEGIS about the data: verdicts, why an account was flagged, what a
+    typology means, what's pending. Facts are computed from the casebook; the
+    LLM (live mode) only rephrases them — it never invents numbers."""
+    from ..agents.chat_analyst import ChatAnalystAgent
+
+    q = body.question.strip()
+    if not q:
+        raise HTTPException(422, "Empty question.")
+    agent = ChatAnalystAgent(store=get_department().store)
+    return await asyncio.to_thread(agent.answer, q[:500])
+
+
+@app.get("/api/typologies")
+async def typologies() -> dict:
+    """The fraud-typology library — used by the UI to explain each type of
+    fraud discovered in an analysis."""
+    from ..knowledge.typologies import TYPOLOGIES
+    return {"typologies": TYPOLOGIES}
+
+
+# ── Org personalisation: the company's own rules + historical baselines ─────
+
+class OrgProfileBody(BaseModel):
+    name: str = ""
+    ctr_threshold: float = 10_000.0
+    watchlist: list[str] | str = []
+    trusted_counterparties: list[str] | str = []
+    policy_notes: list[str] | str = []
+
+
+@app.get("/api/org/profile")
+async def get_org_profile() -> dict:
+    dept = get_department()
+    profile = await asyncio.to_thread(dept.store.get_org_profile)
+    baselines = await asyncio.to_thread(dept.store.baseline_count)
+    return {"profile": profile, "baseline_accounts": baselines}
+
+
+@app.post("/api/org/profile", dependencies=[Depends(require_key)])
+async def set_org_profile(body: OrgProfileBody) -> dict:
+    """Register the organisation's own compliance context: watchlist, trusted
+    counterparties, internal reporting threshold, policy notes. Every
+    subsequent investigation applies it via the Org Policy agent."""
+    from ..casework.org import normalize_profile
+
+    profile = normalize_profile(body.model_dump())
+    dept = get_department()
+    await asyncio.to_thread(dept.store.save_org_profile, profile)
+    return {"profile": profile, "saved": True}
+
+
+@app.post("/api/org/history", dependencies=[Depends(require_key)])
+async def upload_org_history(file: UploadFile = File(...)) -> dict:
+    """Upload the org's PREVIOUS transaction data (CSV/Excel/JSON/PDF). AEGIS
+    builds per-account behavioural baselines from it, so 'unusual' is measured
+    against each account's own history. Parsed in memory; only the aggregate
+    baselines are stored."""
+    from ..casework.org import baselines_from_edges
+    from ..data.user_upload import parse_upload
+
+    data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large (max 25 MB).")
+    try:
+        edges = await asyncio.to_thread(parse_upload, data,
+                                        file.filename or "history.csv")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    rows = baselines_from_edges(edges)
+    dept = get_department()
+    n = await asyncio.to_thread(dept.store.save_baselines, rows)
+    return {"filename": file.filename, "baseline_accounts": n,
+            "transactions_processed": len(edges)}
 
 
 @app.get("/api/health")

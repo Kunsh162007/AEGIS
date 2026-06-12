@@ -7,10 +7,13 @@ type Result = {
   evidence: { agent: string; claim: string; source: string; verified: boolean | null; confidence: number | null; supports: string }[];
   rejected_claims: string[]; consortium_confirmation: string | null; report: string;
 };
+type Txn = { txn_id: string; src: string; dst: string; amount: number; ts: string; channel: string };
 type AccountResult = {
   account: string; alert_type: string; transactions: number;
   result: Result & { case_id: string; qa_score: number | null; qa_findings: string[] };
   case?: { uid: string; priority: number; sla_due: string | null; status: string };
+  txns?: Txn[];
+  flagged_txns?: Record<string, string[]>;
 };
 type Plan = { filename: string; accounts: { account: string; alert_type: string; transactions: number }[] };
 type CaseRow = {
@@ -35,7 +38,14 @@ type Briefing = {
   repeat_subjects: { account: string; case_uids: string[] }[];
   cross_case_links: { counterparty: string; links_cases: string[]; also_under_investigation: boolean }[];
   shareable_patterns: { typology: string; cases: number; scope: string }[];
+  novel_patterns?: { case_uid: string; account: string; signature: Record<string, any>; outcome: string | null }[];
 };
+type Typology = { id: string; text: string };
+type OrgProfile = {
+  name: string; ctr_threshold: number; watchlist: string[];
+  trusted_counterparties: string[]; policy_notes: string[];
+};
+type ChatMsg = { role: "you" | "aegis"; text: string };
 
 // Optional production auth: if an API key was stored (localStorage "aegis_api_key"),
 // attach it; otherwise requests go out plain (the default open mode).
@@ -48,22 +58,102 @@ function hoursLeft(iso: string | null): number | null {
   if (!iso) return null;
   return (new Date(iso).getTime() - Date.now()) / 3_600_000;
 }
-type EvalR = {
-  dataset?: string;
-  baseline: { false_positive_rate: number; recall_catch_rate: number; false_positives: number };
-  aegis: { false_positive_rate: number; recall_catch_rate: number; false_positives: number };
-  false_positive_reduction_pct: number;
-};
-
 const KIND_TAG: Record<string, string> = {
   joined: "👥", evidence: "🔎", challenge: "🥊", verify: "✅", rejected: "⛔",
   consortium: "🤝", verdict: "⚖️", gate: "🧑‍⚖️", clear: "🟢", plan: "📋", room_opened: "📂",
 };
 
-type Tab = "analyze" | "command" | "benchmark";
+type Tab = "analyze" | "command" | "ask";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("analyze");
+
+  // ── fraud-typology library (explains each fraud type discovered) ─────────
+  const [typologyLib, setTypologyLib] = useState<Typology[]>([]);
+  useEffect(() => {
+    fetch("/api/typologies").then((r) => r.json())
+      .then((b) => setTypologyLib(b.typologies)).catch(() => {});
+  }, []);
+
+  // ── ask-AEGIS chat ────────────────────────────────────────────────────────
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight }); }, [chat]);
+
+  async function askAegis(preset?: string) {
+    const q = (preset ?? chatInput).trim();
+    if (!q || chatBusy) return;
+    setChat((p) => [...p, { role: "you", text: q }]);
+    setChatInput(""); setChatBusy(true);
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiHeaders() },
+        body: JSON.stringify({ question: q }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.detail || `chat failed (${r.status})`);
+      setChat((p) => [...p, { role: "aegis", text: body.answer }]);
+    } catch (e: any) {
+      setChat((p) => [...p, { role: "aegis", text: `⚠ ${String(e.message || e)}` }]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  // ── org personalisation (rules + historical baselines) ──────────────────
+  const [org, setOrg] = useState<OrgProfile | null>(null);
+  const [baselineN, setBaselineN] = useState(0);
+  const [orgForm, setOrgForm] = useState({ name: "", ctr_threshold: "10000", watchlist: "", trusted: "", notes: "" });
+  const [orgMsg, setOrgMsg] = useState("");
+  const [orgOpen, setOrgOpen] = useState(false);
+
+  async function loadOrg() {
+    try {
+      const b = await fetch("/api/org/profile").then((r) => r.json());
+      setOrg(b.profile); setBaselineN(b.baseline_accounts);
+      if (b.profile) setOrgForm({
+        name: b.profile.name, ctr_threshold: String(b.profile.ctr_threshold),
+        watchlist: b.profile.watchlist.join(", "),
+        trusted: b.profile.trusted_counterparties.join(", "),
+        notes: b.profile.policy_notes.join("\n"),
+      });
+    } catch { /* panel just stays empty */ }
+  }
+
+  async function saveOrg() {
+    setOrgMsg("");
+    try {
+      const r = await fetch("/api/org/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiHeaders() },
+        body: JSON.stringify({
+          name: orgForm.name, ctr_threshold: parseFloat(orgForm.ctr_threshold) || 10000,
+          watchlist: orgForm.watchlist, trusted_counterparties: orgForm.trusted,
+          policy_notes: orgForm.notes.split("\n").map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.detail || "save failed");
+      setOrgMsg("✓ Profile saved — every new investigation now applies these rules.");
+      await loadOrg();
+    } catch (e: any) { setOrgMsg(`⚠ ${String(e.message || e)}`); }
+  }
+
+  async function uploadHistory(f: File) {
+    setOrgMsg("");
+    const fd = new FormData();
+    fd.append("file", f);
+    try {
+      const r = await fetch("/api/org/history", { method: "POST", body: fd, headers: apiHeaders() });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.detail || "history upload failed");
+      setOrgMsg(`✓ Baselines built for ${body.baseline_accounts} accounts from ${body.transactions_processed} historical transactions.`);
+      await loadOrg();
+    } catch (e: any) { setOrgMsg(`⚠ ${String(e.message || e)}`); }
+  }
 
   // ── command center: queue + KPIs + intelligence (one human, whole desk) ──
   const [ops, setOps] = useState<Ops | null>(null);
@@ -89,7 +179,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (tab === "command") loadCommand();
+    if (tab === "command") { loadCommand(); loadOrg(); }
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function viewCase(uid: string) {
@@ -209,23 +299,6 @@ export default function Home() {
     URL.revokeObjectURL(a.href);
   }
 
-  // ── benchmark: scored against external labels (IBM AML, public) ─────────
-  const [evalR, setEvalR] = useState<EvalR | null>(null);
-  const [evalBusy, setEvalBusy] = useState(false);
-  const [evalErr, setEvalErr] = useState("");
-
-  function runEvalPublic() {
-    setEvalBusy(true); setEvalErr("");
-    fetch("/api/eval/public?limit=200")
-      .then(async (r) => {
-        const body = await r.json();
-        if (body.error) throw new Error(body.error);
-        setEvalR(body);
-      })
-      .catch((e) => setEvalErr(String(e.message || e)))
-      .finally(() => setEvalBusy(false));
-  }
-
   const suspiciousN = results.filter((r) => r.result.verdict === "suspicious").length;
   const reviewN = results.filter((r) => r.result.verdict === "uncertain").length;
   const clearedN = results.filter((r) => r.result.verdict === "benign").length;
@@ -241,7 +314,7 @@ export default function Home() {
             <div className="tagline">Financial-Crime Investigation Mesh</div>
           </div>
         </div>
-        <span className="badge">12 governed agents · evidence-verified verdicts · one-human ops</span>
+        <span className="badge">15 governed agents · learns from every analysis · one-human ops</span>
       </header>
 
       <nav className="tabs">
@@ -251,8 +324,8 @@ export default function Home() {
         <button className={`tab ${tab === "command" ? "active" : ""}`} onClick={() => setTab("command")}>
           Command Center
         </button>
-        <button className={`tab ${tab === "benchmark" ? "active" : ""}`} onClick={() => setTab("benchmark")}>
-          Benchmark
+        <button className={`tab ${tab === "ask" ? "active" : ""}`} onClick={() => setTab("ask")}>
+          Ask AEGIS
         </button>
       </nav>
 
@@ -362,11 +435,51 @@ export default function Home() {
                         {r.result.rejected_claims.length > 0 && (
                           <div className="evi rej">Verifier rejected {r.result.rejected_claims.length} uncited claim{r.result.rejected_claims.length === 1 ? "" : "s"}</div>
                         )}
+                        {r.flagged_txns && Object.keys(r.flagged_txns).length > 0 && r.txns && (
+                          <div className="heatwrap">
+                            <div className="src" style={{ marginBottom: 6 }}>
+                              📍 Suspicious areas in your data — {Object.keys(r.flagged_txns).length} of {r.txns.length} transactions flagged
+                            </div>
+                            <table className="heattable">
+                              <thead><tr><th>from</th><th>to</th><th>amount</th><th>channel</th><th>flagged because</th></tr></thead>
+                              <tbody>
+                                {r.txns.filter((t) => r.flagged_txns![t.txn_id]).slice(0, 12).map((t) => (
+                                  <tr className="hot" key={t.txn_id}>
+                                    <td>{t.src}</td><td>{t.dst}</td>
+                                    <td>${t.amount.toLocaleString()}</td><td>{t.channel}</td>
+                                    <td className="why">{r.flagged_txns![t.txn_id][0]}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {doneN !== null && (() => {
+                const flagged = results.filter((r) => r.result.verdict !== "benign");
+                const types = Array.from(new Set(flagged.map((r) => r.alert_type)));
+                if (!types.length) return null;
+                return (
+                  <div className="panel" style={{ marginTop: 16 }}>
+                    <h2>Fraud types discovered — what each one means</h2>
+                    {types.map((t) => {
+                      const lib = typologyLib.find((x) => x.id === `typology/${t}`);
+                      const accts = flagged.filter((r) => r.alert_type === t);
+                      return (
+                        <div className="evi" key={t} style={{ borderLeftColor: "var(--amber)" }}>
+                          <b>{t.replace(/_/g, " ")}</b> — {accts.length} account{accts.length === 1 ? "" : "s"}: {accts.map((a) => a.account).join(", ")}
+                          <br /><span className="src">{lib ? lib.text : "Behaviour deviating from the account's expected profile — no library typology matched; see the intelligence briefing for novel-pattern flags."}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </>
           )}
         </>
@@ -406,6 +519,43 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <div className="panel" style={{ marginTop: 14 }}>
+            <h2 style={{ cursor: "pointer" }} onClick={() => setOrgOpen(!orgOpen)}>
+              🏢 Organisation profile — your rules, your history, your answers {orgOpen ? "▾" : "▸"}
+              {org && <span className="src"> · {org.name || "unnamed org"}{baselineN > 0 ? ` · baselines for ${baselineN} accounts` : ""}</span>}
+            </h2>
+            {orgOpen && (
+              <>
+                <div className="sub" style={{ marginTop: 0 }}>
+                  Register your company&apos;s own compliance context. The Org Policy agent applies it to every
+                  investigation: watchlisted accounts weigh against a case, vetted counterparties clear flags,
+                  and uploaded history makes &quot;unusual&quot; mean unusual <i>for that account&apos;s own past</i>.
+                </div>
+                <div className="orgform">
+                  <input className="input" placeholder="Organisation name"
+                    value={orgForm.name} onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })} />
+                  <input className="input" placeholder="Internal reporting threshold (e.g. 10000)"
+                    value={orgForm.ctr_threshold} onChange={(e) => setOrgForm({ ...orgForm, ctr_threshold: e.target.value })} />
+                  <input className="input" placeholder="Watchlist accounts (comma-separated)"
+                    value={orgForm.watchlist} onChange={(e) => setOrgForm({ ...orgForm, watchlist: e.target.value })} />
+                  <input className="input" placeholder="Trusted counterparties (comma-separated)"
+                    value={orgForm.trusted} onChange={(e) => setOrgForm({ ...orgForm, trusted: e.target.value })} />
+                  <textarea className="input" rows={3} placeholder="Internal policy notes — one per line (used by reports and Ask AEGIS)"
+                    value={orgForm.notes} onChange={(e) => setOrgForm({ ...orgForm, notes: e.target.value })} />
+                </div>
+                <div className="controls" style={{ marginBottom: 0 }}>
+                  <button className="primary" onClick={saveOrg}>Save profile</button>
+                  <button className="ghost" onClick={() => document.getElementById("history-input")?.click()}>
+                    ⬆ Upload historical data (builds baselines)
+                  </button>
+                  <input id="history-input" type="file" hidden accept=".csv,.xlsx,.xls,.json,.pdf"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadHistory(f); e.currentTarget.value = ""; }} />
+                </div>
+                {orgMsg && <div className={orgMsg.startsWith("✓") ? "finehint" : "error"} style={{ marginTop: 8 }}>{orgMsg}</div>}
+              </>
+            )}
+          </div>
 
           {ops && ops.cases_total > 0 && (
             <div className="grid" style={{ marginTop: 14 }}>
@@ -462,6 +612,13 @@ export default function Home() {
                   {briefing && (
                     <>
                       <div className="sub" style={{ marginBottom: 10 }}>{briefing.headline}</div>
+                      {(briefing.novel_patterns ?? []).map((n, i) => (
+                        <div className="evi" key={`n${i}`} style={{ borderLeftColor: "var(--red)" }}>
+                          🧬 <b>Potentially novel pattern</b> — {n.account} ({n.case_uid}) shows laundering-shaped
+                          structure matching no library typology
+                          <br /><span className="mono">{JSON.stringify(n.signature)}</span>
+                        </div>
+                      ))}
                       {briefing.emerging_typologies.length > 0 && (
                         <div className="summary" style={{ marginTop: 0 }}>
                           {briefing.emerging_typologies.map((t) => (
@@ -511,42 +668,35 @@ export default function Home() {
         </>
       )}
 
-      {/* ════════ BENCHMARK ════════ */}
-      {tab === "benchmark" && (
+      {/* ════════ ASK AEGIS ════════ */}
+      {tab === "ask" && (
         <div className="panel">
-          <h2>Measured accuracy — single-pass baseline vs AEGIS
-            {evalR && <span className="src"> · IBM AML public benchmark (external labels)</span>}
-          </h2>
-          <div className="controls">
-            <button className="primary" onClick={runEvalPublic} disabled={evalBusy}>
-              {evalBusy ? "Scoring…" : "Score on IBM AML benchmark"}
-            </button>
+          <h2>Ask AEGIS — grounded Q&amp;A over your data and cases</h2>
+          <div className="sub" style={{ marginTop: 0 }}>
+            Answers are computed from the casebook (your analyses, verdicts, evidence and rules);
+            the language model only phrases them — it never invents a number.
           </div>
-          {evalErr && <div className="error">⚠ {evalErr}</div>}
-          {!evalR && <div className="sub">Scores AEGIS on a slice of the public IBM
-            Anti-Money-Laundering dataset whose labels were authored externally —
-            measuring how many false alerts AEGIS clears while keeping the catch rate.
-            Nothing here is self-graded.</div>}
-          {evalR && (
-            <>
-              <div className="metrics">
-                <div className="metric">
-                  <div className="big" style={{ color: "var(--green)" }}>{evalR.false_positive_reduction_pct}%</div>
-                  <div className="lbl">false-positive reduction</div>
-                </div>
-                <div className="metric">
-                  <div className="big">{(evalR.aegis.recall_catch_rate * 100).toFixed(0)}%</div>
-                  <div className="lbl">true-positive catch rate (AEGIS)</div>
-                </div>
+          <div className="summary" style={{ marginTop: 0, marginBottom: 12 }}>
+            {["Which accounts are suspicious?", "What is structuring?", "What's pending my review?"].map((p) => (
+              <button className="chip" key={p} onClick={() => askAegis(p)} disabled={chatBusy}>{p}</button>
+            ))}
+          </div>
+          <div className="feed chatfeed" ref={chatRef}>
+            {chat.length === 0 && <div className="sub">Ask why an account was flagged, what a fraud type means, or what needs your attention.</div>}
+            {chat.map((m, i) => (
+              <div className={`msg ${m.role}`} key={i}>
+                <span className="who">{m.role === "you" ? "You" : "AEGIS"}</span>
+                <span>{m.text}</span>
               </div>
-              <div style={{ marginTop: 14 }}>
-                <div className="src">Baseline false-positive rate: {(evalR.baseline.false_positive_rate * 100).toFixed(0)}%</div>
-                <div className="bar"><span style={{ width: `${evalR.baseline.false_positive_rate * 100}%` }} /></div>
-                <div className="src" style={{ marginTop: 8 }}>AEGIS false-positive rate: {(evalR.aegis.false_positive_rate * 100).toFixed(0)}%</div>
-                <div className="bar aegis"><span style={{ width: `${evalR.aegis.false_positive_rate * 100}%` }} /></div>
-              </div>
-            </>
-          )}
+            ))}
+            {chatBusy && <div className="msg aegis"><span className="who">AEGIS</span><span>analysing…</span></div>}
+          </div>
+          <div className="controls" style={{ marginTop: 12, marginBottom: 0 }}>
+            <input className="input" style={{ flex: 1 }} type="text" placeholder="e.g. why was MULE-7 flagged?"
+              value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") askAegis(); }} />
+            <button className="primary" onClick={() => askAegis()} disabled={chatBusy || !chatInput.trim()}>Ask</button>
+          </div>
         </div>
       )}
 

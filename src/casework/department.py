@@ -14,6 +14,7 @@ from ..data.schema import Case, CaseResult, Verdict
 from ..feedback.loop import FeedbackLoop
 from ..knowledge import KnowledgeBase
 from ..policy.autonomy import AutonomyPolicy
+from . import patterns
 from .priority import (MANUAL_MINUTES_PER_ALERT, REVIEW_MINUTES_WITH_AEGIS,
                        hours_saved)
 from .store import CaseStore
@@ -37,11 +38,17 @@ class Department:
 
     def orchestrator(self):
         from ..orchestrator import Orchestrator  # late import: avoids a cycle
-        return Orchestrator(policy=self.policy, kb=self.kb)
+        return Orchestrator(policy=self.policy, kb=self.kb, store=self.store,
+                            org=self.store.get_org_profile())
 
     def record_case(self, case: Case, result: CaseResult,
                     source_file: str = "") -> dict:
-        return self.store.add_case(case, result, source_file)
+        row = self.store.add_case(case, result, source_file)
+        # File the abstract pattern signature too — the institutional memory
+        # the PatternMemoryAgent reads on every future investigation.
+        self.store.add_pattern(row["uid"], case.focus_account,
+                               patterns.signature(case), result.verdict.value)
+        return row
 
     def decide(self, uid: str, decision: str) -> dict:
         """Apply the human officer's decision to a filed case: update its
@@ -61,6 +68,7 @@ class Department:
             entry = self.feedback.record(result, verdict)
 
             self.store.set_decision(uid, verdict.value, status)
+            self.store.set_pattern_outcome(uid, status)  # memory learns the outcome
             self.store.add_feedback({**entry, "case_uid": uid})
             self.store.add_precedent(f"precedent/{result.case_id}", entry["precedent"])
             self.store.kv_set("clear_confidence", str(self.policy.clear_confidence))

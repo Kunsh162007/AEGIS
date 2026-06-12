@@ -124,3 +124,29 @@ button.dismiss { background: rgba(46,204,113,0.12); border-color: var(--green); 
   padding: 10px; font-size: 11px; color: var(--muted); white-space: pre-wrap;
   max-height: 240px; overflow-y: auto; }
 .filed { font-size: 12px; color: var(--blue); margin-top: 8px; }
+
+/* ── ask-AEGIS chat ─────────────────────────────────────────────────────── */
+.chatfeed { min-height: 260px; max-height: 420px; }
+.msg { display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  font-size: 13px; line-height: 1.5; animation: fade 0.3s ease; }
+.msg.you { background: rgba(124,92,255,0.10); border: 1px solid var(--accent); margin-left: 14%; }
+.msg.aegis { background: var(--panel2); border: 1px solid var(--border); margin-right: 14%; }
+.msg .who { font-weight: 700; color: var(--blue); white-space: nowrap; }
+.msg.you .who { color: var(--accent); }
+button.chip { cursor: pointer; }
+button.chip:hover { border-color: var(--accent); }
+
+/* ── dataset heat-marking ───────────────────────────────────────────────── */
+.heatwrap { margin-top: 8px; }
+.heattable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.heattable th { text-align: left; color: var(--muted); font-weight: 600;
+  padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.heattable td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.heattable tr.hot { background: rgba(255,92,92,0.10); }
+.heattable tr.hot td:first-child { border-left: 3px solid var(--red); }
+.heattable .why { color: var(--muted); font-size: 11px; max-width: 320px; }
+
+/* ── org profile form ───────────────────────────────────────────────────── */
+.orgform { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.orgform textarea { grid-column: 1 / -1; resize: vertical; font-family: inherit; }
+@media (max-width: 700px) { .orgform { grid-template-columns: 1fr; } }

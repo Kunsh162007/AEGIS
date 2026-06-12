@@ -15,7 +15,7 @@ from ..band.interface import CaseRoom
 from ..data.schema import Case, Evidence, Verdict
 from .base import BaseAgent
 
-_VALID_PREFIX = ("txn:", "graph:", "kb:", "kyc:")
+_VALID_PREFIX = ("txn:", "graph:", "kb:", "kyc:", "org:", "memory:")
 
 
 class VerifierAgent(BaseAgent):

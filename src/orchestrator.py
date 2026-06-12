@@ -24,6 +24,8 @@ from .agents.frameworks import crew_specialists, langgraph_verification
 from .agents.identity_kyc import IdentityKycAgent
 from .agents.intake import IntakeAgent
 from .agents.network_graph import NetworkGraphAgent
+from .agents.org_policy import OrgPolicyAgent
+from .agents.pattern_memory import PatternMemoryAgent
 from .agents.quality_auditor import QualityAuditorAgent
 from .agents.report_tooling import ReportAgent
 from .agents.transaction_pattern import TransactionPatternAgent
@@ -49,8 +51,11 @@ DEFAULT_SCOPES = {"txn:read", "kyc:read", "kb:read"}
 class Orchestrator:
     def __init__(self, mesh: LocalMesh | None = None, policy: AutonomyPolicy | None = None,
                  kb: KnowledgeBase | None = None, officer_scopes: set[str] | None = None,
-                 use_frameworks: bool | None = None, model: ModelClient | None = None):
+                 use_frameworks: bool | None = None, model: ModelClient | None = None,
+                 store=None, org: dict | None = None):
         self.model = model or ModelClient()
+        self.store = store          # the casebook — institutional memory
+        self.org = org              # the company's own compliance context
         self.mesh = mesh or get_mesh()
         self.kb = kb or KnowledgeBase()
         self.policy = policy or AutonomyPolicy()
@@ -95,6 +100,18 @@ class Orchestrator:
             evidence = []
             for agent in specialists:
                 evidence.extend(agent.investigate(case, room))
+
+        # 2b) Personalisation + institutional memory (only when wired to a
+        #     department): the org's own rules/baselines, and what the officer
+        #     decided on structurally identical cases before.
+        if self.org or self.store:
+            room.recruit("org_policy")
+            evidence.extend(OrgPolicyAgent(
+                self.model, org=self.org, store=self.store).investigate(case, room))
+        if self.store is not None:
+            room.recruit("pattern_memory")
+            evidence.extend(PatternMemoryAgent(
+                self.model, store=self.store).investigate(case, room))
 
         # 3-6) Challenger -> Verifier -> Consortium -> Adjudicator.
         #      As a real LangGraph StateGraph when enabled+available, else inline.

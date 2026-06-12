@@ -26,11 +26,21 @@
   Intelligence agent** reads across all cases to find what no single
   investigation can see (recurring typologies, one counterparty quietly
   bridging separate cases). One human runs it all from the **Command Center**.
-- **A real learning loop.** Every officer decision tunes the autonomy
-  thresholds and files reviewed precedent — both persisted, both reloaded on
-  restart, both visible on screen as they move.
-- **Measured accuracy on a public benchmark** (PaySim / IBM AML / Elliptic) —
-  not a self-graded number.
+- **It gets better with every analysis.** Beyond threshold tuning: every case
+  files an abstract **pattern signature**; officer decisions mark patterns
+  confirmed or dismissed, and the **Pattern Memory agent** cites that
+  institutional memory as evidence on the next structurally-identical case.
+  Suspicious structure matching *no* library typology is flagged as a
+  **potentially novel pattern**.
+- **Personalised to the organisation.** A company registers its own watchlist,
+  vetted counterparties, reporting threshold and policy notes, and uploads its
+  historical data — the **Org Policy agent** then judges "unusual" against
+  each account's *own* baseline, not an abstract norm.
+- **You can talk to it.** The **Ask AEGIS** chat answers questions about the
+  data and cases — facts are computed from the casebook; the LLM only phrases
+  them.
+- **Measured accuracy on a public benchmark** (IBM AML) via the CLI eval
+  harness — not a self-graded number.
 - **Governed + auditable on Band**, with credential traversal and a human gate.
 
 ## 🚀 Quick start (runs offline, no API keys)
@@ -72,8 +82,10 @@ npm run dev          # http://localhost:3000  (proxies /api/* to :8000)
 Drop in a transaction file (CSV / Excel / JSON / text-based PDF — try
 `examples/sample_transactions.csv`), press **Run investigation** and watch the
 agents join, post cited evidence, get challenged, have claims rejected, and
-reach an auto-clear/escalate decision live — on *your* data. The **Benchmark**
-tab scores AEGIS against the externally-labelled IBM AML public dataset.
+reach an auto-clear/escalate decision live — on *your* data. Each verdict also
+**marks the suspicious rows of your dataset** (which transactions, and why)
+and explains **each fraud type discovered**. The **Ask AEGIS** tab is a
+grounded chat over everything analysed.
 
 ## 🧑‍✈️ Command Center — one human runs the whole department
 
@@ -97,10 +109,11 @@ single operator's cockpit over it:
 
 API surface: `GET /api/cases`, `GET /api/cases/{uid}`,
 `POST /api/cases/{uid}/decision` (`{"decision": "confirm"|"dismiss"}`),
-`GET /api/operations`, `GET /api/intel/briefing`. Set `AEGIS_API_KEY` to
-require an `X-API-Key` header on all state-changing endpoints (open by default
-for local/demo use; the dashboard picks a key up from
-`localStorage["aegis_api_key"]`).
+`GET /api/operations`, `GET /api/intel/briefing` (now incl. novel-pattern
+alerts), `POST /api/chat`, `GET /api/typologies`, `GET|POST /api/org/profile`,
+`POST /api/org/history`. Set `AEGIS_API_KEY` to require an `X-API-Key` header
+on all state-changing endpoints (open by default for local/demo use; the
+dashboard picks a key up from `localStorage["aegis_api_key"]`).
 
 ## 🔌 Switching on real models (optional)
 
@@ -124,10 +137,12 @@ structural laundering evidence. Everything degrades to mock if a call fails.
 
 ## 📊 The public accuracy benchmark (the credible number — §9)
 
-A small, balanced, **externally-labelled** slice of the **IBM AML** dataset ships
-with the repo (`src/data/benchmarks/ibm_sample.csv`), so the credible number
-works out-of-the-box — locally and on the deployed app (the **Benchmark** tab).
-No download, no keys.
+A small, balanced, **externally-labelled** slice of the **IBM AML** dataset
+ships with the repo (`src/data/benchmarks/ibm_sample.csv`), so the credible
+number works out-of-the-box via the CLI harness
+(`python -m src.eval.harness`). It is deliberately **not part of the product
+UI** — the app shows only what was computed from the user's own data; the
+benchmark exists for the slide and the README. No download, no keys.
 
 On this slice (200 cases) AEGIS cuts false positives by **~77%** while holding
 the catch rate at the baseline's level (**~89% vs ~90%**). Recall is shown next
@@ -159,6 +174,8 @@ The labels are external, so the false-positive-reduction number is defensible.
 ```
 alert → Intake opens a Band room + recruits specialists by alert type
       → Transaction / Network / Identity / External-Intel post CITED evidence
+      → Org Policy applies the COMPANY'S rules + each account's own baseline
+      → Pattern Memory cites what the officer decided on this structure before
       → Challenger argues the innocent case
       → Verifier audits every claim (rejects uncited / rebutted)
       → Consortium Liaison asks peer banks about the ABSTRACT pattern only
@@ -177,8 +194,8 @@ See `src/` for one module per concern and `src/agents/` for one module per agent
 
 | Path | What |
 |------|------|
-| `src/agents/` | the 12-agent roster (specialists + verification trio + consortium + report + **quality auditor** + **strategic intelligence**) |
-| `src/casework/` | the department layer: persistent casebook (SQLite), priority/SLA model, shared learned state |
+| `src/agents/` | the 15-agent roster (specialists + verification trio + consortium + report + quality auditor + strategic intelligence + **org policy** + **pattern memory** + **chat analyst**) |
+| `src/casework/` | the department layer: persistent casebook (SQLite), priority/SLA model, org profile + baselines, pattern memory, shared learned state |
 | `src/band/` | Band layer: abstract `interface.py` + in-process `stub.py` + **`band_agent.py` (live agent on the real Band platform)** |
 | `src/models/` | unified AI/ML API + Featherless + Ollama + mock client, with caching |
 | `src/graph/` | NetworkX entity graph (mule hubs, cycles) |

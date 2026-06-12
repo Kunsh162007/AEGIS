@@ -12,7 +12,7 @@ from ..band.interface import CaseRoom
 from ..data.schema import Case, CaseResult, Decision, Verdict
 from .base import BaseAgent
 
-_VALID_PREFIX = ("txn:", "graph:", "kb:", "kyc:")
+_VALID_PREFIX = ("txn:", "graph:", "kb:", "kyc:", "org:", "memory:")
 _HIGH_WEIGHT = 0.7
 
 
